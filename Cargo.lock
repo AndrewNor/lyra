@@ -1347,6 +1347,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lyra-cli"
+version = "0.1.0"
+dependencies = [
+ "lyra-core",
+ "lyra-db",
+ "lyra-engine",
+ "lyra-library",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "lyra-core"
 version = "0.0.0"
 

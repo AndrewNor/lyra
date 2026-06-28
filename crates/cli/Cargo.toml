@@ -1,0 +1,15 @@
+[package]
+name    = "lyra-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "lyra-cli"
+path = "src/main.rs"
+
+[dependencies]
+lyra-db      = { path = "../db" }
+lyra-library = { path = "../library" }
+lyra-core    = { path = "../core" }
+lyra-engine  = { path = "../engine" }
+thiserror    = { workspace = true }

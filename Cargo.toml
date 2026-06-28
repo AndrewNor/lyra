@@ -9,6 +9,7 @@ members = [
     "crates/db",
     "crates/metadata",
     "crates/library",
+    "crates/cli",
     "spikes/rodio-play",
     "spikes/cpal-pipewire",
 ]
