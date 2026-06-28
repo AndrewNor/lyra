@@ -8,10 +8,14 @@ publish = false
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-lyra-core  = { path = "../core" }
-cxx        = { workspace = true }
-cxx-qt     = { workspace = true }
-cxx-qt-lib = { workspace = true }
+lyra-core    = { path = "../core" }
+lyra-db      = { path = "../db" }
+lyra-library = { path = "../library" }
+lyra-engine  = { path = "../engine" }
+serde_json   = { workspace = true }
+cxx          = { workspace = true }
+cxx-qt       = { workspace = true }
+cxx-qt-lib   = { workspace = true }
 
 [build-dependencies]
 cxx-qt-build = { workspace = true }
