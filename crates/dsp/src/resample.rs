@@ -37,9 +37,14 @@ pub fn resample(
 
     let ratio = to_rate as f64 / from_rate as f64;
 
-    // Use polynomial resampler (faster, good enough for audio path)
-    // chunk_size: use the full input as one chunk (max 65536 for sanity).
-    let chunk_size = num_frames.min(65536);
+    // Use polynomial resampler (faster, good enough for audio path).
+    // chunk_size == num_frames: configure the resampler for exactly the full
+    // input so that process_all_into_buffer processes it in a single call
+    // without any mismatch between the configured chunk size and the actual
+    // input length.  rubato 3's process_all_into_buffer already loops
+    // internally for inputs larger than chunk_size, but using num_frames here
+    // is simpler and avoids any buffer-size validation edge cases.
+    let chunk_size = num_frames;
 
     let mut resampler = Async::<f32>::new_poly(
         ratio,
@@ -98,6 +103,38 @@ mod tests {
         assert!(
             actual_frames.abs_diff(expected_frames) <= tolerance,
             "resample 44100->48000: expected ≈{expected_frames} frames, got {actual_frames} (tolerance ±{tolerance})"
+        );
+    }
+
+    /// Regression test: inputs exceeding the old 65536-frame cap must work correctly.
+    ///
+    /// 100_000 stereo frames (200_000 interleaved samples) at 44100 Hz resampled
+    /// to 48000 Hz.  The expected output frame count is 100_000 * 48000/44100 ≈ 108_843.
+    /// We assert the result is `Ok` and within ±2% of that expectation, exercising
+    /// the path that was previously misconfigured when num_frames > 65536.
+    #[test]
+    fn resample_large_input_over_65536_frames() {
+        let n_frames = 100_000usize; // well above the old 65536 cap
+        let channels = 2u16;
+        // Generate a simple sine wave so the content is realistic.
+        let input: Vec<f32> = (0..n_frames * channels as usize)
+            .map(|i| (i as f32 * std::f32::consts::TAU / 44100.0).sin() * 0.5)
+            .collect();
+
+        let result = resample(&input, channels, 44100, 48000);
+        assert!(
+            result.is_ok(),
+            "resample of 100_000-frame stereo input should succeed, got: {:?}",
+            result.err()
+        );
+
+        let output = result.unwrap();
+        let expected_frames = (n_frames as f64 * 48000.0 / 44100.0).round() as usize;
+        let actual_frames = output.len() / channels as usize;
+        let tolerance = (expected_frames as f64 * 0.02).ceil() as usize;
+        assert!(
+            actual_frames.abs_diff(expected_frames) <= tolerance,
+            "large resample 44100->48000: expected ≈{expected_frames} frames, got {actual_frames} (tolerance ±{tolerance})"
         );
     }
 }
