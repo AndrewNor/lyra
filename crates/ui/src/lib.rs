@@ -2,4 +2,6 @@
 //! Compiled as a staticlib and linked by CMake/Corrosion into the Qt app.
 
 pub mod bridge;
+pub mod library;
 pub mod paths;
+pub mod player;
