@@ -1,8 +1,12 @@
 //! Digital signal processing: loudness analysis, parametric EQ, and resampling.
 
+pub mod eq;
 pub mod loudness;
+pub mod resample;
 
+pub use eq::{EqBand, Equalizer};
 pub use loudness::{analyze_lufs, db_to_linear, replaygain_gain_db};
+pub use resample::resample;
 
 /// Errors produced by `lyra-dsp`.
 #[derive(Debug, thiserror::Error)]
