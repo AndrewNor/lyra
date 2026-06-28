@@ -45,8 +45,8 @@ pub struct PlayQueue {
     items: Vec<i64>,
     /// Current logical position in the *order* slice (shuffled or linear).
     pos: Option<usize>,
-    pub repeat: RepeatMode,
-    pub shuffle: bool,
+    repeat: RepeatMode,
+    shuffle: bool,
     /// Permutation of `0..items.len()` used when `shuffle == true`.
     order: Vec<usize>,
     /// Seed used to build `order`.
@@ -180,19 +180,24 @@ impl PlayQueue {
         }
     }
 
+    /// Return the current repeat mode.
+    pub fn repeat(&self) -> RepeatMode {
+        self.repeat
+    }
+
+    /// Return whether shuffle is currently enabled.
+    pub fn shuffle(&self) -> bool {
+        self.shuffle
+    }
+
     /// Append a single track id to the end of the queue.
     ///
     /// The order permutation is extended to include the new item.
+    /// In both linear and shuffle modes the new index is appended to the tail.
     pub fn append(&mut self, id: i64) {
         let new_idx = self.items.len();
         self.items.push(id);
-        if self.shuffle {
-            // Insert the new index at a random position within the unvisited
-            // tail, or just append deterministically for simplicity.
-            self.order.push(new_idx);
-        } else {
-            self.order.push(new_idx);
-        }
+        self.order.push(new_idx);
         // If the queue was empty, set pos to 0.
         if self.pos.is_none() {
             self.pos = Some(0);

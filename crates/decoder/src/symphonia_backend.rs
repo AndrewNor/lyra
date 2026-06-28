@@ -91,7 +91,7 @@ impl SymphoniaDecoder {
 
 impl Decoder for SymphoniaDecoder {
     fn spec(&self) -> AudioSpec {
-        self.spec.clone()
+        self.spec
     }
 
     fn next_chunk(&mut self) -> Result<Option<Vec<f32>>> {

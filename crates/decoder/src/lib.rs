@@ -7,7 +7,7 @@ pub use symphonia_backend::SymphoniaDecoder;
 use thiserror::Error;
 
 /// Audio specification: sample rate and channel count.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AudioSpec {
     pub sample_rate: u32,
     pub channels: u16,
