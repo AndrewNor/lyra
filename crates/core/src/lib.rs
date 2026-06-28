@@ -1,6 +1,9 @@
 //! lyra-core: pure domain logic, no I/O, no Qt, no async.
 //! Unit-testable with plain `cargo test -p lyra-core`.
 
+pub mod queue;
+pub use queue::PlayQueue;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepeatMode {
     Off,
