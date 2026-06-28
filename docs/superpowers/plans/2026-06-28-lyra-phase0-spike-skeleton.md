@@ -909,3 +909,16 @@ git rm -r spikes && \
 ## Phase 0 Exit Criteria
 
 Phase 0 is complete when: the workspace builds, `lyra-core` tests pass with no Qt, both audio spikes run, `./build/lyra` shows a Breeze-themed Kirigami window driven by Rust (Gate 1 PASS), and `PHASE0-RESULTS.md` records the Gate 2 KEEP/PIVOT decision. The **next step is to write the Phase 1 plan** against whichever UI stack Gate 2 selected — that plan is authored separately, after this one is executed.
+
+---
+
+## As-built notes (post-execution, 2026-06-28)
+
+Phase 0 was executed and **merged**; Gate 1 PASSED and Gate 2 = **KEEP Kirigami**. Full evidence and the build-loop measurements are in [`PHASE0-RESULTS.md`](../../../PHASE0-RESULTS.md). The CXX-Qt example code in Tasks 4–5 above was version-volatile and was **corrected against the installed cxx-qt 0.8.1** during execution — the shipped, working forms differ from the snippets above:
+
+- **Crate name** is `lyra_ui` (underscore), not `lyra-ui` — works around a cxx-qt-build 0.8.1 env-var bug that broke linking.
+- **`build.rs`** uses `CxxQtBuilder::new_qml_module(QmlModule::new("ai.drivee.lyra").qml_files([...])).file("src/bridge.rs")` (builder API), not the struct-literal `QmlModule { … }` shown in Task 4 Step 2.
+- **`CMakeLists.txt`** uses the **two-macro** form — `cxx_qt_import_crate(... CRATES lyra_ui ...)` plus a separate `cxx_qt_import_qml_module(lyra_ui_qml_module URI "ai.drivee.lyra" SOURCE_CRATE lyra_ui)` — and links the target `lyra_ui_qml_module`, not the single embedded-`QML_MODULES` form / `lyra-ui_ai_drivee_lyra` target shown in Task 5 Step 2.
+- **Bridge**: bare `Pin` (not `core::pin::Pin`) inside the macro; `QStringList::append` takes its argument by value; `use cxx_qt::Threading;` is needed for `qt_thread()`.
+
+Treat the committed `crates/ui/` source + root `CMakeLists.txt` as the source of truth for the 0.8.1 API, not the example snippets above.
