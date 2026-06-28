@@ -77,6 +77,18 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Returns a map of `path -> mtime` for all tracks in the database.
+    pub fn track_mtimes(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let mut stmt = self.conn.prepare("SELECT path, mtime FROM tracks")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let (path, mtime) = row?;
+            map.insert(path, mtime);
+        }
+        Ok(map)
+    }
+
     pub fn search(&self, query: &str) -> Result<Vec<Track>> {
         // FTS5 MATCH against the contentless index, joined back to tracks by rowid.
         let sql = format!(
