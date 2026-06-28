@@ -74,18 +74,17 @@ Creates a fully valid workspace (all member crates exist as compiling stubs) and
 Run (one line per the verified research; package names can drift on Debian — see Step 2 fallback):
 
 ```bash
-sudo apt update && sudo apt install -y \
-  build-essential pkg-config ninja-build cmake \
+sudo apt update && sudo apt install -y build-essential pkg-config ninja-build cmake \
   libasound2-dev libpipewire-0.3-dev libclang-dev clang \
-  extra-cmake-modules \
-  qt6-base-dev qt6-declarative-dev \
+  extra-cmake-modules qt6-base-dev qt6-base-dev-tools qt6-declarative-dev \
   qml6-module-qtquick qml6-module-qtquick-controls qml6-module-qtquick-layouts \
   qml6-module-qtquick-window qml6-module-qtquick-templates \
-  libkf6kirigami-dev qml6-module-org-kde-kirigami kirigami-addons-dev \
-  qqc2-desktop-style
+  libkirigami-dev qml6-module-org-kde-kirigami qml6-module-org-kde-desktop
 ```
 
-Why each matters: `libasound2-dev` — cpal compiles the ALSA backend **unconditionally** on Linux even for a pipewire-only build (without it the build panics in `alsa-sys/build.rs`). `libpipewire-0.3-dev` — ships both `libpipewire-0.3.pc` and `libspa-0.2.pc` that cpal's `pipewire` feature probes. `libclang-dev`+`clang` — `pipewire-sys`/`libspa-sys` run `bindgen` at build time and load libclang. `qqc2-desktop-style` — makes QtQuick Controls render with Breeze on Plasma (without it the window is unstyled).
+> **Verified Debian-trixie package names (2026-06-28).** The KF6 Kirigami dev package is `libkirigami-dev` (NOT `libkf6kirigami-dev`), and the runtime Breeze style for QtQuick Controls is the QML module `qml6-module-org-kde-desktop` (NOT `qqc2-desktop-style`). `qmake6` comes from `qt6-base-dev-tools`. All names confirmed with `apt-cache show` on the dev box. Paste as one block — a truncated paste silently drops the last package and apt then aborts the whole transaction.
+
+Why each matters: `libasound2-dev` — cpal compiles the ALSA backend **unconditionally** on Linux even for a pipewire-only build (without it the build panics in `alsa-sys/build.rs`). `libpipewire-0.3-dev` — ships both `libpipewire-0.3.pc` and `libspa-0.2.pc` that cpal's `pipewire` feature probes. `libclang-dev`+`clang` — `pipewire-sys`/`libspa-sys` run `bindgen` at build time and load libclang. `qml6-module-org-kde-desktop` — makes QtQuick Controls render with Breeze on Plasma (without it the window is unstyled).
 
 - [ ] **Step 2: Verify the toolchain and dev packages resolved**
 
