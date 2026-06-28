@@ -1,4 +1,4 @@
-use lyra_metadata::{read_tags, write_tags, TrackTags};
+use lyra_metadata::{read_tags, read_cover, write_tags, write_cover, TrackTags};
 use std::io::Write;
 
 /// Minimal valid 16-bit PCM WAV (44-byte header + 1 sample frame), enough for
@@ -39,4 +39,17 @@ fn write_then_read_round_trips() {
     assert_eq!(got.artist.as_deref(), Some("Bonobo"));
     assert_eq!(got.album.as_deref(), Some("Migration"));
     assert_eq!(got.track_no, Some(4));
+}
+
+#[test]
+fn cover_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("c.wav");
+    write_min_wav(&p);
+    // 1x1 PNG (minimal valid PNG bytes)
+    let png: &[u8] = &[137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,2,0,0,0,144,119,83,222,0,0,0,12,73,68,65,84,8,215,99,248,207,192,0,0,0,3,0,1,0,24,221,141,219,0,0,0,0,73,69,78,68,174,66,96,130];
+    write_cover(&p, "image/png", png).unwrap();
+    let got = read_cover(&p).unwrap().expect("cover present");
+    assert_eq!(got.mime, "image/png");
+    assert!(!got.data.is_empty());
 }
