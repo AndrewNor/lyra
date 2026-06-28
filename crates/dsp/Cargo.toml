@@ -1,0 +1,10 @@
+[package]
+name = "lyra-dsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ebur128 = { workspace = true }
+rubato = { workspace = true }
+biquad = { workspace = true }
+thiserror = { workspace = true }

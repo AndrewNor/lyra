@@ -1,0 +1,12 @@
+[package]
+name = "lyra-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lyra-decoder = { path = "../decoder" }
+lyra-dsp = { path = "../dsp" }
+lyra-core = { path = "../core" }
+cpal = { workspace = true }
+rtrb = { workspace = true }
+thiserror = { workspace = true }
