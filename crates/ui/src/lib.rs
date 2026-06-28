@@ -1,1 +1,4 @@
-//! lyra-ui: CXX-Qt bridge crate (stub until Task 4).
+//! lyra-ui: thin CXX-Qt bridge between the Rust core and QML/Kirigami.
+//! Compiled as a staticlib and linked by CMake/Corrosion into the Qt app.
+
+pub mod bridge;
