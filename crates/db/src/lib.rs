@@ -3,6 +3,8 @@ mod schema;
 pub mod model;
 pub mod queries;
 
+pub use model::{NewTrack, Track};
+
 use std::path::Path;
 
 #[derive(Debug, thiserror::Error)]

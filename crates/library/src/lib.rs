@@ -42,11 +42,19 @@ pub fn scan(root: &Path, db: &mut lyra_db::Db) -> Result<ScanSummary> {
     let mut to_parse: Vec<(std::path::PathBuf, i64)> = Vec::new();
     let mut unchanged_count = 0usize;
 
+    let mut failed_count = 0usize;
     for path in &files {
-        let mtime = std::fs::metadata(path)
+        let mtime = match std::fs::metadata(path)
             .and_then(|m| m.modified())
-            .map(|t| t.duration_since(UNIX_EPOCH).unwrap_or_default().as_secs() as i64)
-            .unwrap_or(0);
+            .map(|t| t.duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64))
+        {
+            Ok(Ok(secs)) => secs,
+            _ => {
+                // Cannot read mtime: count as failed and skip to avoid endless re-parsing.
+                failed_count += 1;
+                continue;
+            }
+        };
 
         let path_str = path.to_string_lossy().into_owned();
         match known_mtimes.get(&path_str) {
@@ -70,6 +78,7 @@ pub fn scan(root: &Path, db: &mut lyra_db::Db) -> Result<ScanSummary> {
 
     let mut summary = ScanSummary {
         unchanged: unchanged_count,
+        failed: failed_count,
         ..Default::default()
     };
 

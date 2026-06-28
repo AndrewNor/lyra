@@ -141,6 +141,20 @@ mod tests {
     }
 
     #[test]
+    fn fts_stays_in_sync_after_update() {
+        let mut db = Db::open_in_memory().unwrap();
+        // Insert initial version with title "Original"
+        db.upsert_track(&nt("/m/song.flac", "Original", "Artist", "Album")).unwrap();
+        // Upsert same path with new title "Remastered"
+        let mut t2 = nt("/m/song.flac", "Remastered", "Artist", "Album");
+        t2.mtime = 200;
+        db.upsert_track(&t2).unwrap();
+        // FTS should reflect the new title only
+        assert_eq!(db.search("remastered").unwrap().len(), 1, "updated title should be searchable");
+        assert_eq!(db.search("original").unwrap().len(), 0, "old title must be removed from FTS index");
+    }
+
+    #[test]
     fn search_matches_title_and_artist() {
         let mut db = Db::open_in_memory().unwrap();
         db.upsert_track(&nt("/m/1.flac", "Midnight City", "M83", "Hurry Up")).unwrap();

@@ -22,7 +22,8 @@ pub fn read_cover(path: &Path) -> Result<Option<Cover>> {
     }))
 }
 
-/// Write a cover picture into the primary tag of the file (for testing).
+/// Embed a cover picture into the primary tag of an audio file, writing it back to disk.
+/// Used by the art cache to persist artwork alongside track metadata.
 pub fn write_cover(path: &Path, mime: &str, data: &[u8]) -> Result<()> {
     use lofty::prelude::{TaggedFileExt, TagExt};
     use lofty::picture::{MimeType, Picture, PictureType};
@@ -32,7 +33,10 @@ pub fn write_cover(path: &Path, mime: &str, data: &[u8]) -> Result<()> {
         let tt = tagged.primary_tag_type();
         tagged.insert_tag(Tag::new(tt));
     }
-    let tag = tagged.primary_tag_mut().expect("tag inserted above");
+    let Some(tag) = tagged.primary_tag_mut() else {
+        // Should be unreachable: we just inserted the tag above.
+        return Ok(());
+    };
     let picture = Picture::unchecked(data.to_vec())
         .mime_type(MimeType::from_str(mime))
         .pic_type(PictureType::CoverFront)

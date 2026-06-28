@@ -42,6 +42,16 @@ fn write_then_read_round_trips() {
 }
 
 #[test]
+fn read_cover_on_tagless_file_returns_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("tagless.wav");
+    write_min_wav(&p);
+    // No cover was embedded — read_cover must return Ok(None), not an error.
+    let result = read_cover(&p).unwrap();
+    assert!(result.is_none(), "expected no cover on a fresh WAV with no embedded picture");
+}
+
+#[test]
 fn cover_round_trips() {
     let dir = tempfile::tempdir().unwrap();
     let p = dir.path().join("c.wav");

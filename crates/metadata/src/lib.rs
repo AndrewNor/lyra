@@ -37,7 +37,12 @@ pub fn write_tags(path: &Path, tags: &TrackTags) -> Result<()> {
         let tt = tagged.primary_tag_type();
         tagged.insert_tag(Tag::new(tt));
     }
-    let tag = tagged.primary_tag_mut().expect("tag inserted above");
+    let Some(tag) = tagged.primary_tag_mut() else {
+        // Should be unreachable: we just inserted the tag above.
+        return Ok(());
+    };
+    // TODO: disc_no, year, genre, album_artist are not yet written here;
+    // a future full round-trip implementation should add those fields.
     if let Some(v) = &tags.title  { tag.set_title(v.clone()); }
     if let Some(v) = &tags.artist { tag.set_artist(v.clone()); }
     if let Some(v) = &tags.album  { tag.set_album(v.clone()); }
