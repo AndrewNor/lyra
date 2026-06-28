@@ -56,9 +56,10 @@ fn scan_is_incremental() {
         "second scan: expected 2 unchanged"
     );
 
-    // Bump mtime on a.wav by rewriting its tags (which modifies the file, changing mtime)
-    // Sleep briefly to guarantee the filesystem mtime advances past the stored value
-    std::thread::sleep(std::time::Duration::from_millis(20));
+    // Bump mtime on a.wav by rewriting its tags.
+    // Sleep 1.1s to guarantee the filesystem mtime (1-second resolution) advances
+    // past the value stored in the DB from the first scan.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
     let mut tags = lyra_metadata::TrackTags::default();
     tags.title = Some("A (updated)".into());
     tags.artist = Some("Artist".into());
