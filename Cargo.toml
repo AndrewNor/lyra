@@ -1,0 +1,24 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/ui",
+    "spikes/rodio-play",
+    "spikes/cpal-pipewire",
+]
+
+# Single source of truth for shared version pins. Member crates write
+# `dep = { workspace = true }` to inherit. Phase 1 adds rusqlite, lofty,
+# symphonia, ebur128, rubato, biquad, rtrb, tokio here — NOT in Phase 0.
+[workspace.dependencies]
+# CXX-Qt family — exact pins; the API differs across 0.6/0.7/0.8/0.9.
+cxx          = "1.0"
+cxx-qt       = "=0.8.1"
+cxx-qt-lib   = { version = "=0.8.1", features = ["qt_full", "link_qt_object_files"] }
+cxx-qt-build = { version = "=0.8.1", features = ["link_qt_object_files"] }
+# Audio (verified).
+cpal  = { version = "=0.18.1", features = ["pipewire"] }
+rodio = "=0.22.2"
+
+[profile.dev]
+opt-level = 1   # symphonia/audio decode is painfully slow at opt-level=0 (matters in Phase 1)
