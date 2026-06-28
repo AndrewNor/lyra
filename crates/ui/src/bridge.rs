@@ -63,8 +63,7 @@ impl Default for LibraryControllerRust {
 // Methods are implemented on the GENERATED type, not on the Rust struct.
 impl qobject::LibraryController {
     fn next_index(&self) -> i32 {
-        // qproperty getters return &T; deref to read. If the compiler says a
-        // getter already returns i32 by value, drop the `*`.
+        // qproperty getters return &T, so deref to read the i32 values.
         let cur = (*self.current()).max(0) as usize;
         let len = (*self.len()).max(0) as usize;
         match core_next_index(cur, len, RepeatMode::All) {
