@@ -3,6 +3,9 @@ resolver = "2"
 members = [
     "crates/core",
     "crates/ui",
+    "crates/db",
+    "crates/metadata",
+    "crates/library",
     "spikes/rodio-play",
     "spikes/cpal-pipewire",
 ]
@@ -19,6 +22,17 @@ cxx-qt-build = { version = "=0.8.1", features = ["link_qt_object_files"] }
 # Audio (verified).
 cpal  = { version = "=0.18.1", features = ["pipewire"] }
 rodio = "=0.22.2"
+# Data layer (Phase 1A: pure Rust, no Qt).
+rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite_migration = "2.2"
+lofty = "0.24"
+walkdir = "2.5"
+rayon = "1.12"
+image = "0.25"
+blake3 = "1.8"
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tempfile = "3"
 
 [profile.dev]
 opt-level = 1   # symphonia/audio decode is painfully slow at opt-level=0 (matters in Phase 1)
