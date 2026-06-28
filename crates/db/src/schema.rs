@@ -31,7 +31,8 @@ pub fn migrations() -> Migrations<'static> {
 
         CREATE VIRTUAL TABLE tracks_fts USING fts5(
             title, artist, album,
-            content=''
+            content='',
+            contentless_delete=1
         );
         "#,
     )])
