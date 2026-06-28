@@ -2,6 +2,9 @@
 resolver = "2"
 members = [
     "crates/core",
+    "crates/decoder",
+    "crates/dsp",
+    "crates/engine",
     "crates/ui",
     "crates/db",
     "crates/metadata",
@@ -20,8 +23,13 @@ cxx-qt       = "=0.8.1"
 cxx-qt-lib   = { version = "=0.8.1", features = ["qt_full", "link_qt_object_files"] }
 cxx-qt-build = { version = "=0.8.1", features = ["link_qt_object_files"] }
 # Audio (verified).
-cpal  = { version = "=0.18.1", features = ["pipewire"] }
-rodio = "=0.22.2"
+cpal       = { version = "=0.18.1", features = ["pipewire"] }
+rodio      = "=0.22.2"
+symphonia  = { version = "0.6", features = ["mp3","isomp4","aac","flac","vorbis","wav","pcm"] }
+ebur128    = "0.1"
+rubato     = "3"
+biquad     = "0.6"
+rtrb       = "0.3"
 # Data layer (Phase 1A: pure Rust, no Qt).
 rusqlite = { version = "0.39", features = ["bundled"] }
 rusqlite_migration = "2.2"
