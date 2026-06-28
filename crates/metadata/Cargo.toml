@@ -1,0 +1,12 @@
+[package]
+name = "lyra-metadata"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+lofty = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "lyra-library"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+lyra-db = { path = "../db" }
+lyra-metadata = { path = "../metadata" }
+walkdir = { workspace = true }
+rayon = { workspace = true }
+image = { workspace = true }
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
