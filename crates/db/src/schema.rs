@@ -1,8 +1,9 @@
 use rusqlite_migration::{Migrations, M};
 
 pub fn migrations() -> Migrations<'static> {
-    Migrations::new(vec![M::up(
-        r#"
+    Migrations::new(vec![
+        M::up(
+            r#"
         CREATE TABLE artists (
             id   INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE
@@ -35,5 +36,7 @@ pub fn migrations() -> Migrations<'static> {
             contentless_delete=1
         );
         "#,
-    )])
+        ),
+        M::up("ALTER TABLE tracks ADD COLUMN genre TEXT;"),
+    ])
 }

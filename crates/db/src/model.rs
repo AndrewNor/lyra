@@ -20,6 +20,13 @@ pub struct Artist {
     pub track_count: i64,
 }
 
+/// A genre row with aggregate track count.
+#[derive(Debug, Clone)]
+pub struct Genre {
+    pub name: String,
+    pub track_count: i64,
+}
+
 /// Data needed to insert or update a track.
 #[derive(Debug, Clone)]
 pub struct NewTrack {
@@ -34,6 +41,7 @@ pub struct NewTrack {
     pub duration_ms: Option<u64>,
     pub mtime: i64,
     pub cover_thumb: Option<String>,
+    pub genre: Option<String>,
 }
 
 /// A track row as read from the database.
