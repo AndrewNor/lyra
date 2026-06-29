@@ -10,7 +10,7 @@ mod decode_loop;
 mod output;
 pub mod spectrum;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -140,6 +140,16 @@ pub struct Engine {
     /// (and skips resampling when rates match).
     bit_perfect: Arc<AtomicBool>,
 
+    /// Crossfade window in seconds stored as f32 bits.  0.0 = disabled.
+    /// Written by `set_crossfade_secs()` on the UI thread; read by the
+    /// decode thread (single f32 load — no lock needed).
+    crossfade_secs: Arc<AtomicU32>,
+
+    /// Path of the next track to crossfade into.  Set by the Player when
+    /// it knows what comes next; cleared by the decode thread once it has
+    /// opened the next decoder and the crossfade begins.
+    next_track_path: Arc<Mutex<Option<PathBuf>>>,
+
     /// Handle to the spectrum analyzer thread.  `None` when stopped.
     /// Replaced on each `play()`.
     spectrum_analyzer: Option<SpectrumAnalyzerHandle>,
@@ -184,6 +194,8 @@ impl Engine {
             eq_config: Arc::new(Mutex::new(EqConfig::default())),
             eq_generation: Arc::new(AtomicU64::new(0)),
             bit_perfect: Arc::new(AtomicBool::new(false)),
+            crossfade_secs: Arc::new(AtomicU32::new(0.0f32.to_bits())),
+            next_track_path: Arc::new(Mutex::new(None)),
             spectrum_analyzer: None,
             spectrum_levels_store,
         })
@@ -250,6 +262,8 @@ impl Engine {
             Arc::clone(&self.eq_config),
             Arc::clone(&self.eq_generation),
             Arc::clone(&self.bit_perfect),
+            Arc::clone(&self.crossfade_secs),
+            Arc::clone(&self.next_track_path),
         )?;
 
         self.stream = Some(stream);
@@ -394,6 +408,33 @@ impl Engine {
         self.bit_perfect.load(Ordering::Relaxed)
     }
 
+    /// Set the crossfade window in seconds (0.0 = disabled, max clamped to 12 s).
+    ///
+    /// When > 0 and a next track path is known, the decode thread will begin
+    /// mixing the outgoing and incoming tracks over this window using
+    /// equal-power gain curves.  0 = OFF (default), normal gapless behaviour
+    /// is fully preserved.
+    pub fn set_crossfade_secs(&self, secs: f32) {
+        let clamped = secs.clamp(0.0, 12.0);
+        self.crossfade_secs.store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Return the current crossfade window in seconds (0.0 = disabled).
+    pub fn crossfade_secs(&self) -> f32 {
+        f32::from_bits(self.crossfade_secs.load(Ordering::Relaxed))
+    }
+
+    /// Inform the engine of the next track path so crossfade can be prepared.
+    ///
+    /// Call this whenever the play queue advances — typically right after
+    /// `play()` starts a new track.  The decode thread reads this once it
+    /// enters the crossfade window.  Pass `None` to clear (e.g. at end of queue).
+    pub fn set_next_track_path(&self, path: Option<&Path>) {
+        if let Ok(mut guard) = self.next_track_path.lock() {
+            *guard = path.map(|p| p.to_path_buf());
+        }
+    }
+
     // ── Internal helpers ─────────────────────────────────────────────────────
 
     fn stop_internal(&mut self) {
@@ -423,6 +464,10 @@ impl Engine {
         self.seek_ms = Arc::new(AtomicU64::new(SEEK_NONE));
         self.seek_generation = Arc::new(AtomicU64::new(0));
         self.flushing = Arc::new(AtomicBool::new(false));
+        // Clear any pending next-track path so it doesn't leak into the next play.
+        if let Ok(mut guard) = self.next_track_path.lock() {
+            *guard = None;
+        }
         self.state = PlaybackState::Stopped;
     }
 
