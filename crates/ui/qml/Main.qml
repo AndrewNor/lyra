@@ -35,6 +35,9 @@ Kirigami.ApplicationWindow {
         library.loadPlaylists()
         library.loadSmartPlaylists()
         player.initMpris()
+        // Restore last session: reloads queue + current track, loaded but paused.
+        // Falls back to first library tracks if no session file exists.
+        player.restoreSession()
     }
 
     // ── View state machine ──────────────────────────────────────────────────
@@ -728,10 +731,15 @@ Kirigami.ApplicationWindow {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: {
-                            if (player.state_text === "Playing")
+                            if (player.state_text === "Playing") {
                                 player.pause()
-                            else
+                            } else if (player.state_text === "Paused") {
                                 player.resume()
+                            } else {
+                                // Stopped but a track is loaded (e.g. restored session):
+                                // start from the saved position.
+                                player.playCurrent()
+                            }
                         }
                     }
 

@@ -13,6 +13,7 @@ lyra-db       = { path = "../db" }
 lyra-library  = { path = "../library" }
 lyra-engine   = { path = "../engine" }
 lyra-metadata = { path = "../metadata" }
+serde         = { workspace = true, features = ["derive"] }
 serde_json    = { workspace = true }
 cxx          = { workspace = true }
 cxx-qt       = { workspace = true }

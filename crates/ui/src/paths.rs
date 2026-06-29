@@ -27,6 +27,26 @@ pub fn library_db_path() -> PathBuf {
     db_dir.join("library.db")
 }
 
+/// Return the absolute path to the lyra session state file.
+///
+/// Respects `$XDG_DATA_HOME`; falls back to `$HOME/.local/share` when the
+/// variable is absent or empty.  Creates the parent directory if needed.
+pub fn state_file() -> PathBuf {
+    let data_home = std::env::var("XDG_DATA_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_owned());
+            PathBuf::from(home).join(".local").join("share")
+        });
+
+    let db_dir = data_home.join("lyra");
+    let _ = std::fs::create_dir_all(&db_dir);
+
+    db_dir.join("state.json")
+}
+
 /// Return the absolute path to the lyra album-art thumbnail cache directory.
 ///
 /// Respects `$XDG_CACHE_HOME`; falls back to `$HOME/.cache` when the variable

@@ -1707,6 +1707,7 @@ dependencies = [
  "lyra-library",
  "lyra-metadata",
  "mpris-server",
+ "serde",
  "serde_json",
 ]
 

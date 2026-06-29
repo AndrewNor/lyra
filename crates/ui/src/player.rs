@@ -147,6 +147,21 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "spectrumLevels"]
         fn spectrum_levels(self: Pin<&mut Player>) -> QString;
+
+        /// Restore the last playback session from state.json on startup.
+        /// Call from QML `Component.onCompleted` after the library loads.
+        /// Loads the queue and current track (paused/stopped), does NOT play.
+        /// Falls back to the first 50 library tracks if no session file exists.
+        #[qinvokable]
+        #[cxx_name = "restoreSession"]
+        fn restore_session(self: Pin<&mut Player>);
+
+        /// Play the current queue track from its saved position (if any).
+        /// Use this from QML play button when state_text is "Stopped" but a
+        /// current track is already loaded.
+        #[qinvokable]
+        #[cxx_name = "playCurrent"]
+        fn play_current(self: Pin<&mut Player>);
     }
 
     impl cxx_qt::Threading for Player {}
@@ -158,8 +173,55 @@ use cxx_qt_lib::QString;
 use lyra_core::{PlayQueue, RepeatMode};
 use lyra_engine::{Engine, EQ_FREQS_HZ};
 use mpris_server::PlaybackStatus;
+use serde::{Deserialize, Serialize};
 
 use crate::mpris::{MprisHandle, MprisState};
+use lyra_db::Db;
+
+// ── Session persistence ──────────────────────────────────────────────────────
+
+/// Persisted session state written to `$XDG_DATA_HOME/lyra/state.json`.
+/// `tracks_json` is the same format as the Library `results_json` array.
+#[derive(Serialize, Deserialize, Default)]
+struct SessionState {
+    /// The full playlist the queue was built from (Library results_json format).
+    tracks_json: String,
+    /// Index of the current track within the playlist.
+    index: i32,
+    /// Playback position in seconds at the time of save.
+    position_secs: f64,
+    /// Master volume (0.0..=1.0).
+    volume: f64,
+    /// Whether shuffle was enabled.
+    shuffle: bool,
+    /// Repeat mode string: "off", "all", or "one".
+    repeat_mode: String,
+}
+
+/// Write `SessionState` to `paths::state_file()`.  Never panics.
+fn save_session(state: &SessionState) {
+    let path = crate::paths::state_file();
+    // Ensure parent directory exists.
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match serde_json::to_string(state) {
+        Ok(json) => {
+            let _ = std::fs::write(&path, json.as_bytes());
+        }
+        Err(e) => {
+            eprintln!("[lyra] session save error: {e}");
+        }
+    }
+}
+
+/// Read `SessionState` from `paths::state_file()`.  Returns `None` on any
+/// error (missing file, parse failure, etc.) — never panics.
+fn load_session() -> Option<SessionState> {
+    let path = crate::paths::state_file();
+    let bytes = std::fs::read(&path).ok()?;
+    serde_json::from_slice::<SessionState>(&bytes).ok()
+}
 
 /// Build the `eq_bands_json` string from a gains array.
 fn build_eq_bands_json(gains: &[f32; 10]) -> String {
@@ -242,6 +304,10 @@ pub struct PlayerRust {
 
     /// Persisted EQ gains (applied to the engine when it's lazily created).
     eq_gains: [f32; 10],
+
+    /// Position (in seconds) restored from session state, to seek to on the
+    /// next `play_current` call.  Cleared after the seek is applied.
+    pending_resume_secs: f64,
 }
 
 const EMPTY_LYRICS_JSON: &str = r#"{"synced":false,"lines":[]}"#;
@@ -270,6 +336,7 @@ impl Default for PlayerRust {
             bit_perfect: false,
             crossfade_secs: 0.0,
             eq_gains: default_gains,
+            pending_resume_secs: 0.0,
         }
     }
 }
@@ -535,6 +602,8 @@ impl qobject::Player {
             dur_ms,
             next_row_path.as_deref(),
         );
+        // Persist session after track change.
+        self.as_ref().save_current_session();
     }
 
     pub fn next(mut self: Pin<&mut Self>) {
@@ -583,6 +652,8 @@ impl qobject::Player {
             dur_ms,
             next_path.as_deref(),
         );
+        // Persist session after track change.
+        self.as_ref().save_current_session();
     }
 
     pub fn prev(mut self: Pin<&mut Self>) {
@@ -631,6 +702,8 @@ impl qobject::Player {
             dur_ms,
             next_path.as_deref(),
         );
+        // Persist session after track change.
+        self.as_ref().save_current_session();
     }
 
     pub fn pause(mut self: Pin<&mut Self>) {
@@ -646,6 +719,8 @@ impl qobject::Player {
         if did_pause {
             self.as_mut().set_state_text(QString::from("Paused"));
             self.as_ref().push_mpris_state();
+            // Capture position at pause time and persist.
+            self.as_ref().save_current_session();
         }
     }
 
@@ -681,6 +756,8 @@ impl qobject::Player {
         self.as_mut().set_duration_secs(0.0);
         // Notify MPRIS of Stopped status + cleared metadata.
         self.as_ref().push_mpris_state();
+        // Persist the cleared state.
+        self.as_ref().save_current_session();
     }
 
     fn refresh_position(mut self: Pin<&mut Self>) {
@@ -752,6 +829,7 @@ impl qobject::Player {
             }
         }
         self.as_mut().set_volume(clamped);
+        self.as_ref().save_current_session();
     }
 
     fn toggle_shuffle(mut self: Pin<&mut Self>) {
@@ -763,6 +841,7 @@ impl qobject::Player {
             s
         };
         self.as_mut().set_shuffle(new_shuffle);
+        self.as_ref().save_current_session();
     }
 
     fn cycle_repeat(mut self: Pin<&mut Self>) {
@@ -782,6 +861,7 @@ impl qobject::Player {
             }
         };
         self.as_mut().set_repeat_mode(QString::from(new_mode_str));
+        self.as_ref().save_current_session();
     }
 
     fn set_eq_enabled_invokable(mut self: Pin<&mut Self>, enabled: bool) {
@@ -871,5 +951,254 @@ impl qobject::Player {
         s.push(']');
 
         QString::from(s.as_str())
+    }
+
+    // ── Session persistence helpers ───────────────────────────────────────────
+
+    /// Collect current player state and write it to `state.json`.
+    /// Never panics; errors are logged to stderr.
+    fn save_current_session(self: Pin<&Self>) {
+        let r = self.rust();
+
+        // If there is no playlist, nothing meaningful to persist.
+        if r.playlist.is_empty() {
+            return;
+        }
+
+        // Build tracks_json from the cached playlist.
+        let tracks_json = {
+            let values: Vec<serde_json::Value> = r.playlist.iter().map(|t| {
+                serde_json::json!({
+                    "id": t.id,
+                    "title": t.title,
+                    "artist": t.artist,
+                    "album": "",
+                    "path": t.path,
+                    "durationMs": t.duration_ms,
+                    "cover_thumb": t.cover_thumb,
+                })
+            }).collect();
+            serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
+        };
+
+        // Current queue index: find the position of the current id in playlist.
+        let current_id = r.play_queue.current();
+        let index = current_id
+            .and_then(|id| r.playlist.iter().position(|row| row.id == id))
+            .unwrap_or(0) as i32;
+
+        // Live position from engine (more accurate than the polled property).
+        let position_secs = r.engine
+            .as_ref()
+            .map(|e| e.position_secs())
+            .unwrap_or(r.position_secs);
+
+        let repeat_mode = r.repeat_mode.to_string();
+
+        let state = SessionState {
+            tracks_json,
+            index,
+            position_secs,
+            volume: r.volume,
+            shuffle: r.shuffle,
+            repeat_mode,
+        };
+
+        save_session(&state);
+    }
+
+    /// Restore the last session from `state.json`.  Called from QML
+    /// `Component.onCompleted`.  Loads queue and current track display
+    /// (paused/stopped) — does NOT call the audio engine.
+    /// Falls back to the first 50 library tracks when no session exists.
+    fn restore_session(mut self: Pin<&mut Self>) {
+        let session_opt = load_session();
+
+        match session_opt {
+            Some(session) if !session.tracks_json.is_empty() => {
+                eprintln!("[lyra] restore_session: restoring saved session (index={})", session.index);
+
+                let playlist = parse_playlist(&session.tracks_json);
+                if playlist.is_empty() {
+                    eprintln!("[lyra] restore_session: empty playlist in state file, falling back");
+                    self.as_mut().restore_fallback();
+                    return;
+                }
+
+                let idx = (session.index as usize).min(playlist.len().saturating_sub(1));
+                let row = playlist[idx].clone();
+                let current_id = Some(row.id);
+
+                // Rebuild the PlayQueue.
+                let ids: Vec<i64> = playlist.iter().map(|r| r.id).collect();
+                {
+                    let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                    r.playlist = playlist.clone();
+                    r.play_queue.set_items(ids);
+                    r.play_queue.jump_to(idx);
+                }
+
+                // Restore volume, shuffle, repeat.
+                let volume = session.volume.clamp(0.0, 1.0);
+                let shuffle = session.shuffle;
+                let repeat_mode_str = session.repeat_mode.clone();
+                let repeat_mode = match repeat_mode_str.as_str() {
+                    "all" => RepeatMode::All,
+                    "one" => RepeatMode::One,
+                    _ => RepeatMode::Off,
+                };
+
+                {
+                    let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                    r.volume = volume;
+                    r.shuffle = shuffle;
+                    r.play_queue.set_shuffle(shuffle);
+                    r.play_queue.set_repeat(repeat_mode);
+                    // Store the resume position to apply when play_current is called.
+                    r.pending_resume_secs = session.position_secs;
+                }
+
+                // Update QObject properties.
+                self.as_mut().set_volume(volume);
+                self.as_mut().set_shuffle(shuffle);
+                self.as_mut().set_repeat_mode(QString::from(repeat_mode_str.as_str()));
+
+                // Set the current track display.
+                self.as_mut().set_current_title(QString::from(row.title.as_str()));
+                self.as_mut().set_current_artist(QString::from(row.artist.as_str()));
+                self.as_mut().set_current_cover_thumb(QString::from(row.cover_thumb.as_str()));
+                self.as_mut().set_duration_secs(row.duration_ms as f64 / 1000.0);
+                self.as_mut().set_position_secs(session.position_secs);
+                self.as_mut().set_state_text(QString::from("Stopped"));
+
+                // Build queue_json (tracks after current).
+                let queue_json = build_queue_json(&playlist, current_id);
+                self.as_mut().set_queue_json(QString::from(queue_json.as_str()));
+
+                eprintln!("[lyra] restore_session: loaded \"{}\" at {:.1}s", row.title, session.position_secs);
+            }
+            _ => {
+                eprintln!("[lyra] restore_session: no session file, loading fallback tracks");
+                self.as_mut().restore_fallback();
+            }
+        }
+    }
+
+    /// Fallback: load the first 50 tracks from the library into the queue.
+    /// The now-playing panel will show the first track; nothing plays.
+    fn restore_fallback(mut self: Pin<&mut Self>) {
+        // Open a read-only db connection to fetch tracks.
+        let db_path = crate::paths::library_db_path();
+        let tracks_opt = Db::open(&db_path)
+            .ok()
+            .and_then(|db| db.recently_added(50).ok());
+
+        let Some(tracks) = tracks_opt else {
+            eprintln!("[lyra] restore_fallback: no tracks available");
+            return;
+        };
+
+        if tracks.is_empty() {
+            eprintln!("[lyra] restore_fallback: library is empty");
+            return;
+        }
+
+        // Convert db Track rows to our cached TrackRow format.
+        let playlist: Vec<TrackRow> = tracks.iter().map(|t| TrackRow {
+            id: t.id,
+            title: t.title.clone(),
+            artist: t.artist.clone().unwrap_or_default(),
+            path: t.path.clone(),
+            cover_thumb: t.cover_thumb.clone().unwrap_or_default(),
+            duration_ms: t.duration_ms.unwrap_or(0),
+        }).collect();
+
+        let ids: Vec<i64> = playlist.iter().map(|r| r.id).collect();
+        {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.playlist = playlist.clone();
+            r.play_queue.set_items(ids);
+            r.play_queue.jump_to(0);
+        }
+
+        let row = &playlist[0];
+        let current_id = Some(row.id);
+        let queue_json = build_queue_json(&playlist, current_id);
+
+        self.as_mut().set_current_title(QString::from(row.title.as_str()));
+        self.as_mut().set_current_artist(QString::from(row.artist.as_str()));
+        self.as_mut().set_current_cover_thumb(QString::from(row.cover_thumb.as_str()));
+        self.as_mut().set_duration_secs(row.duration_ms as f64 / 1000.0);
+        self.as_mut().set_position_secs(0.0);
+        self.as_mut().set_state_text(QString::from("Stopped"));
+        self.as_mut().set_queue_json(QString::from(queue_json.as_str()));
+
+        eprintln!("[lyra] restore_fallback: loaded {} tracks, showing \"{}\"", playlist.len(), row.title);
+    }
+
+    /// Play the current queue track from its pending resume position (if any).
+    /// Used by the QML play button when state is "Stopped" but a track is loaded.
+    fn play_current(mut self: Pin<&mut Self>) {
+        // Collect what we need before calling play_row.
+        let (path, title, artist, cover, dur_ms, next_path) = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            let current_id = r.play_queue.current();
+            let Some(id) = current_id else {
+                return;
+            };
+            let Some(row) = find_row(&r.playlist, id) else {
+                return;
+            };
+            let pos = r.playlist.iter().position(|x| x.id == id);
+            let next_p = pos
+                .and_then(|i| r.playlist.get(i + 1))
+                .map(|x| x.path.clone());
+            (
+                row.path.clone(),
+                row.title.clone(),
+                row.artist.clone(),
+                row.cover_thumb.clone(),
+                row.duration_ms,
+                next_p,
+            )
+        };
+
+        // Grab the pending resume position and clear it.
+        let resume_secs = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            let s = r.pending_resume_secs;
+            r.pending_resume_secs = 0.0;
+            s
+        };
+
+        self.as_mut().play_row(
+            &path,
+            &title,
+            &artist,
+            &cover,
+            dur_ms,
+            next_path.as_deref(),
+        );
+
+        // Seek to the saved position after play starts, if applicable.
+        if resume_secs > 0.5 {
+            let dur = {
+                let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                r.duration_secs
+            };
+            if dur > 0.0 {
+                let target = resume_secs.min(dur - 0.1).max(0.0);
+                {
+                    let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                    if let Some(e) = r.engine.as_mut() {
+                        let _ = e.seek(target);
+                    }
+                }
+                self.as_mut().set_position_secs(target);
+            }
+        }
+
+        // Persist session.
+        self.as_ref().save_current_session();
     }
 }
