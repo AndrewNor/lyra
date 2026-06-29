@@ -23,6 +23,7 @@ pub mod qobject {
         #[qproperty(QString, status_text)]
         #[qproperty(QString, albums_json)]
         #[qproperty(QString, artists_json)]
+        #[qproperty(QString, genres_json)]
         type Library = super::LibraryRust;
 
         /// Load all tracks from the db → resultsJson + trackCount.
@@ -57,6 +58,16 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "loadArtistTracks"]
         fn load_artist_tracks(self: Pin<&mut Library>, id: i64);
+
+        /// Load all genres → genres_json.
+        #[qinvokable]
+        #[cxx_name = "loadGenres"]
+        fn load_genres(self: Pin<&mut Library>);
+
+        /// Load tracks for a specific genre → results_json.
+        #[qinvokable]
+        #[cxx_name = "loadGenreTracks"]
+        fn load_genre_tracks(self: Pin<&mut Library>, genre: QString);
     }
 
     impl cxx_qt::Threading for Library {}
@@ -65,7 +76,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use lyra_db::{Album, Artist, Db, Track};
+use lyra_db::{Album, Artist, Db, Genre, Track};
 
 use crate::paths::{art_cache_dir, library_db_path};
 
@@ -78,6 +89,7 @@ pub struct LibraryRust {
     status_text: QString,
     albums_json: QString,
     artists_json: QString,
+    genres_json: QString,
 
     /// Live database connection (Qt thread only).
     db: Db,
@@ -123,6 +135,7 @@ impl Default for LibraryRust {
             status_text: status,
             albums_json: QString::from("[]"),
             artists_json: QString::from("[]"),
+            genres_json: QString::from("[]"),
             db,
             music_dir,
         }
@@ -180,6 +193,20 @@ pub(crate) fn artists_to_json(artists: &[Artist]) -> String {
                 "name": a.name,
                 "album_count": a.album_count,
                 "track_count": a.track_count,
+            })
+        })
+        .collect();
+    serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Build a JSON array string from a slice of `Genre`s.
+pub(crate) fn genres_to_json(genres: &[Genre]) -> String {
+    let values: Vec<serde_json::Value> = genres
+        .iter()
+        .map(|g| {
+            serde_json::json!({
+                "name": g.name,
+                "track_count": g.track_count,
             })
         })
         .collect();
@@ -351,6 +378,45 @@ impl qobject::Library {
             }
             Err(e) => {
                 let msg = format!("loadArtistTracks error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_genres(mut self: Pin<&mut Self>) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .list_genres();
+        match result {
+            Ok(genres) => {
+                let json = genres_to_json(&genres);
+                self.as_mut().set_genres_json(QString::from(json.as_str()));
+                let msg = format!("{} genres", genres.len());
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadGenres error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_genre_tracks(mut self: Pin<&mut Self>, genre: QString) {
+        let genre_str = genre.to_string();
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .tracks_by_genre(&genre_str);
+        match result {
+            Ok(tracks) => {
+                let count = tracks.len() as i32;
+                let json = tracks_to_json(&tracks);
+                self.as_mut().set_results_json(QString::from(json.as_str()));
+                self.as_mut().set_track_count(count);
+                let msg = format!("{count} tracks");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadGenreTracks error: {e}");
                 self.as_mut().set_status_text(QString::from(msg.as_str()));
             }
         }
