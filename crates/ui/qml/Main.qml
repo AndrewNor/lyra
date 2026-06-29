@@ -142,7 +142,23 @@ Kirigami.ApplicationWindow {
         modal: true
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
+        implicitWidth: 340
         standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+
+        background: Rectangle {
+            color: "#1b1b26"
+            radius: 14
+            border.color: Qt.rgba(1, 1, 1, 0.10)
+            border.width: 1
+        }
+        header: Controls.Label {
+            text: newPlaylistDialog.title
+            font.bold: true
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.05
+            color: root.textPrimary
+            padding: 18
+            bottomPadding: 4
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -150,7 +166,8 @@ Kirigami.ApplicationWindow {
 
             Controls.Label {
                 text: "Playlist name:"
-                color: root.textPrimary
+                color: root.textDim
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
             }
 
             Controls.TextField {
@@ -205,7 +222,23 @@ Kirigami.ApplicationWindow {
         modal: true
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
+        implicitWidth: 340
         standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+
+        background: Rectangle {
+            color: "#1b1b26"
+            radius: 14
+            border.color: Qt.rgba(1, 1, 1, 0.10)
+            border.width: 1
+        }
+        header: Controls.Label {
+            text: renamePlaylistDialog.title
+            font.bold: true
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.05
+            color: root.textPrimary
+            padding: 18
+            bottomPadding: 4
+        }
 
         ColumnLayout {
             anchors.fill: parent
@@ -213,7 +246,8 @@ Kirigami.ApplicationWindow {
 
             Controls.Label {
                 text: "New name:"
-                color: root.textPrimary
+                color: root.textDim
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
             }
 
             Controls.TextField {
@@ -241,6 +275,119 @@ Kirigami.ApplicationWindow {
         onRejected: {
             renamePlaylistField.text = ""
             root.renamePlaylistId = -1
+        }
+    }
+
+    // ── Delete-playlist confirmation dialog ──────────────────────────────────
+    property int deletePlaylistId: -1
+    property bool deleteIsSmart: false
+    property string deletePlaylistName: ""
+
+    Controls.Dialog {
+        id: deletePlaylistDialog
+        modal: true
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        implicitWidth: 360
+        padding: 0
+
+        background: Rectangle {
+            color: "#1b1b26"
+            radius: 14
+            border.color: Qt.rgba(1, 1, 1, 0.10)
+            border.width: 1
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 14
+
+            // Header with destructive icon
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 20
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                spacing: 12
+
+                Rectangle {
+                    width: 38; height: 38; radius: 19
+                    color: Qt.rgba(0.93, 0.30, 0.30, 0.16)
+                    Kirigami.Icon {
+                        anchors.centerIn: parent
+                        source: "edit-delete"
+                        width: 20; height: 20
+                        color: "#e85d5d"
+                    }
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 2
+                    Controls.Label {
+                        text: "Delete playlist?"
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.05
+                        color: root.textPrimary
+                    }
+                    Controls.Label {
+                        Layout.fillWidth: true
+                        text: "“" + root.deletePlaylistName + "” will be removed. This can't be undone."
+                        wrapMode: Text.WordWrap
+                        color: root.textDim
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+                    }
+                }
+            }
+
+            // Action buttons
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.bottomMargin: 16
+                Layout.leftMargin: 20
+                Layout.rightMargin: 20
+                spacing: 8
+
+                Item { Layout.fillWidth: true }
+
+                Controls.Button {
+                    text: "Cancel"
+                    flat: true
+                    onClicked: deletePlaylistDialog.close()
+                }
+
+                Controls.Button {
+                    text: "Delete"
+                    highlighted: true
+                    onClicked: deletePlaylistDialog.accept()
+                    contentItem: Controls.Label {
+                        text: "Delete"
+                        color: "white"
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                    background: Rectangle {
+                        radius: 7
+                        color: parent.down ? "#c0392b" : (parent.hovered ? "#e74c3c" : "#d64541")
+                        implicitWidth: 84
+                        implicitHeight: 32
+                    }
+                }
+            }
+        }
+
+        onAccepted: {
+            if (root.deletePlaylistId >= 0) {
+                if (root.deleteIsSmart)
+                    library.deleteSmartPlaylist(root.deletePlaylistId)
+                else
+                    library.deletePlaylist(root.deletePlaylistId)
+                root.view = "songs"
+                root.detailPlaylistId = -1
+                root.detailSmartPlaylistId = -1
+                root.detailName = ""
+            }
+            root.deletePlaylistId = -1
+            root.deletePlaylistName = ""
         }
     }
 
@@ -1350,10 +1497,10 @@ Kirigami.ApplicationWindow {
                                     Controls.ToolTip.text: "Delete playlist"
                                     Controls.ToolTip.delay: 400
                                     onClicked: {
-                                        library.deletePlaylist(root.detailPlaylistId)
-                                        root.view = "songs"
-                                        root.detailPlaylistId = -1
-                                        root.detailName = ""
+                                        root.deletePlaylistId = root.detailPlaylistId
+                                        root.deleteIsSmart = false
+                                        root.deletePlaylistName = root.detailName
+                                        deletePlaylistDialog.open()
                                     }
                                 }
 
@@ -1364,10 +1511,10 @@ Kirigami.ApplicationWindow {
                                     Controls.ToolTip.text: "Delete smart playlist"
                                     Controls.ToolTip.delay: 400
                                     onClicked: {
-                                        library.deleteSmartPlaylist(root.detailSmartPlaylistId)
-                                        root.view = "songs"
-                                        root.detailSmartPlaylistId = -1
-                                        root.detailName = ""
+                                        root.deletePlaylistId = root.detailSmartPlaylistId
+                                        root.deleteIsSmart = true
+                                        root.deletePlaylistName = root.detailName
+                                        deletePlaylistDialog.open()
                                     }
                                 }
                             }

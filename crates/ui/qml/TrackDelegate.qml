@@ -290,65 +290,121 @@ Item {
         }
     }
 
-    // ── Hover "+" add-to-playlist button ─────────────────────────────────
+    // ── Hover "+" quick add-to-playlist button ───────────────────────────
     Controls.ToolButton {
         id: addBtn
         anchors.right: parent.right
         anchors.rightMargin: 56  // leave room for duration label
         anchors.verticalCenter: parent.verticalCenter
-        visible: delegateHover.containsMouse && (root.playlistsModel.length > 0 || true)
-        text: "+"
-        font.bold: true
-        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
-        implicitWidth: 24
-        implicitHeight: 24
+        visible: delegateHover.containsMouse
+        icon.name: "list-add"
+        implicitWidth: 28
+        implicitHeight: 28
         flat: true
-        opacity: 0.60
-        padding: 0
+        opacity: hovered ? 1.0 : 0.6
         Controls.ToolTip.visible: hovered
         Controls.ToolTip.text: "Add to playlist"
         Controls.ToolTip.delay: 300
-        onClicked: contextMenu.popup()
+        onClicked: quickAddMenu.popup()
+
+        Behavior on opacity { NumberAnimation { duration: 100 } }
     }
 
-    // ── Context menu ──────────────────────────────────────────────────────
+    // ── Quick "Add to playlist" menu (opened by the + button) ─────────────
+    Controls.Menu {
+        id: quickAddMenu
+
+        Controls.MenuItem {
+            icon.name: "folder-add"
+            text: "New playlist…"
+            onTriggered: { if (root.trackData) root.newPlaylistRequested(root.trackData.id) }
+        }
+
+        Controls.MenuSeparator { visible: root.playlistsModel.length > 0 }
+
+        Repeater {
+            model: root.playlistsModel
+            delegate: Controls.MenuItem {
+                required property var modelData
+                icon.name: "view-media-playlist"
+                text: modelData ? (modelData.name || "Untitled") : ""
+                onTriggered: {
+                    if (root.trackData && modelData)
+                        root.addToPlaylistRequested(root.trackData.id, modelData.id)
+                }
+            }
+        }
+
+        // Empty-state hint
+        Controls.MenuItem {
+            visible: root.playlistsModel.length === 0
+            height: visible ? implicitHeight : 0
+            enabled: false
+            text: "No playlists yet — create one above"
+        }
+    }
+
+    // ── Right-click context menu ──────────────────────────────────────────
     Controls.Menu {
         id: contextMenu
 
         Controls.MenuItem {
+            icon.name: "media-playback-start"
             text: "Play"
             onTriggered: root.trackClicked(root.trackIndex)
         }
 
         Controls.MenuSeparator {}
 
-        // "Remove from this playlist" — only shown in playlist_detail view
+        // Add to playlist — nested submenu (New playlist… + existing playlists)
+        Controls.Menu {
+            title: "Add to playlist"
+
+            Controls.MenuItem {
+                icon.name: "folder-add"
+                text: "New playlist…"
+                onTriggered: { if (root.trackData) root.newPlaylistRequested(root.trackData.id) }
+            }
+
+            Controls.MenuSeparator { visible: root.playlistsModel.length > 0 }
+
+            Repeater {
+                model: root.playlistsModel
+                delegate: Controls.MenuItem {
+                    required property var modelData
+                    icon.name: "view-media-playlist"
+                    text: modelData ? (modelData.name || "Untitled") : ""
+                    onTriggered: {
+                        if (root.trackData && modelData)
+                            root.addToPlaylistRequested(root.trackData.id, modelData.id)
+                    }
+                }
+            }
+
+            Controls.MenuItem {
+                visible: root.playlistsModel.length === 0
+                height: visible ? implicitHeight : 0
+                enabled: false
+                text: "No playlists yet"
+            }
+        }
+
+        // Remove from this playlist — only shown in playlist_detail view
         Controls.MenuItem {
             visible: root.currentPlaylistId >= 0
             height: visible ? implicitHeight : 0
-            text: "Remove from playlist"
+            icon.name: "list-remove"
+            text: "Remove from this playlist"
             onTriggered: {
                 if (root.trackData && root.currentPlaylistId >= 0)
                     root.removeFromPlaylistRequested(root.trackData.id, root.currentPlaylistId)
             }
         }
 
-        Controls.MenuSeparator {
-            visible: root.currentPlaylistId >= 0
-            height: visible ? implicitHeight : 0
-        }
-
-        Controls.MenuItem {
-            text: "New playlist…"
-            onTriggered: {
-                if (root.trackData)
-                    root.newPlaylistRequested(root.trackData.id)
-            }
-        }
-
         Controls.MenuSeparator {}
 
         Controls.MenuItem {
+            icon.name: "document-edit"
             text: "Edit tags…"
             onTriggered: {
                 if (root.trackData) {
@@ -356,24 +412,6 @@ Item {
                     editArtistField.text = root.trackData.artist || ""
                     editAlbumField.text  = root.trackData.album  || ""
                     editTagsDialog.open()
-                }
-            }
-        }
-
-        Controls.MenuSeparator {
-            visible: root.playlistsModel.length > 0
-            height: visible ? implicitHeight : 0
-        }
-
-        // Dynamic playlist entries — add track to existing playlist
-        Repeater {
-            model: root.playlistsModel
-            delegate: Controls.MenuItem {
-                required property var modelData
-                text: modelData ? (modelData.name || "Untitled") : ""
-                onTriggered: {
-                    if (root.trackData && modelData)
-                        root.addToPlaylistRequested(root.trackData.id, modelData.id)
                 }
             }
         }
