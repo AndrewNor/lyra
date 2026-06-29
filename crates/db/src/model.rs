@@ -44,6 +44,14 @@ pub struct NewTrack {
     pub genre: Option<String>,
 }
 
+/// A playlist row with aggregate track count.
+#[derive(Debug, Clone)]
+pub struct Playlist {
+    pub id: i64,
+    pub name: String,
+    pub track_count: i64,
+}
+
 /// A track row as read from the database.
 #[derive(Debug, Clone)]
 pub struct Track {

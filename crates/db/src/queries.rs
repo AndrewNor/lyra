@@ -1,6 +1,6 @@
 //! Database query implementations.
 
-use crate::{model::{Album, Artist, Genre, NewTrack, Track}, Db, Result};
+use crate::{model::{Album, Artist, Genre, NewTrack, Playlist, Track}, Db, Result};
 
 const SELECT_TRACK: &str = "SELECT t.id, t.path, t.title, ar.name, al.title, t.track_no, t.duration_ms, t.cover_thumb \
     FROM tracks t LEFT JOIN artists ar ON ar.id=t.artist_id LEFT JOIN albums al ON al.id=t.album_id";
@@ -202,6 +202,103 @@ impl Db {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([genre], row_to_track)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ── Playlist queries ─────────────────────────────────────────────────────
+
+    /// Create a new playlist and return its id.
+    pub fn create_playlist(&mut self, name: &str) -> Result<i64> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.conn.execute(
+            "INSERT INTO playlists(name, created) VALUES (?1, ?2)",
+            rusqlite::params![name, now],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Rename an existing playlist.
+    pub fn rename_playlist(&mut self, id: i64, name: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE playlists SET name = ?1 WHERE id = ?2",
+            rusqlite::params![name, id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a playlist (cascade removes playlist_tracks rows).
+    pub fn delete_playlist(&mut self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM playlists WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// Add a track to a playlist. Position is max+1 (appended). Duplicates are ignored.
+    pub fn add_to_playlist(&mut self, playlist_id: i64, track_id: i64) -> Result<()> {
+        let next_pos: i64 = self.conn.query_row(
+            "SELECT COALESCE(MAX(position), 0) + 1 FROM playlist_tracks WHERE playlist_id = ?1",
+            [playlist_id],
+            |r| r.get(0),
+        )?;
+        self.conn.execute(
+            "INSERT OR IGNORE INTO playlist_tracks(playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+            rusqlite::params![playlist_id, track_id, next_pos],
+        )?;
+        Ok(())
+    }
+
+    /// Remove a track from a playlist.
+    pub fn remove_from_playlist(&mut self, playlist_id: i64, track_id: i64) -> Result<()> {
+        self.conn.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
+            rusqlite::params![playlist_id, track_id],
+        )?;
+        Ok(())
+    }
+
+    /// List all playlists with track counts, ordered by name.
+    pub fn list_playlists(&self) -> Result<Vec<Playlist>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT p.id, p.name, COUNT(pt.track_id) AS track_count \
+             FROM playlists p \
+             LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id \
+             GROUP BY p.id \
+             ORDER BY p.name",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Playlist {
+                id:          r.get(0)?,
+                name:        r.get(1)?,
+                track_count: r.get(2)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Returns all tracks in the given playlist, ordered by position.
+    pub fn playlist_tracks(&self, id: i64) -> Result<Vec<Track>> {
+        let sql = format!(
+            "{SELECT_TRACK} \
+             JOIN playlist_tracks pt ON pt.track_id = t.id \
+             WHERE pt.playlist_id = ?1 \
+             ORDER BY pt.position"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([id], row_to_track)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Returns the most recently added tracks (newest first by row id).
+    pub fn recently_added(&self, limit: i64) -> Result<Vec<Track>> {
+        let sql = format!(
+            "{SELECT_TRACK} \
+             ORDER BY t.id DESC \
+             LIMIT ?1"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([limit], row_to_track)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 }
@@ -427,5 +524,119 @@ mod tests {
         let genres = db.list_genres().unwrap();
         assert_eq!(genres.len(), 1, "NULL genre must not appear in list");
         assert_eq!(genres[0].name, "Rock");
+    }
+
+    // ── Playlist tests ────────────────────────────────────────────────────────
+
+    #[test]
+    fn playlist_create_add_list_and_tracks() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+
+        // Get track ids
+        let tracks = db.list_tracks().unwrap();
+        assert!(tracks.len() >= 2, "need at least 2 tracks");
+        let t1_id = tracks[0].id;
+        let t2_id = tracks[1].id;
+
+        // Create playlist
+        let pid = db.create_playlist("My Mix").unwrap();
+        assert!(pid > 0, "playlist id must be positive");
+
+        // Add 2 tracks
+        db.add_to_playlist(pid, t1_id).unwrap();
+        db.add_to_playlist(pid, t2_id).unwrap();
+
+        // list_playlists: count and track_count
+        let playlists = db.list_playlists().unwrap();
+        assert_eq!(playlists.len(), 1);
+        assert_eq!(playlists[0].name, "My Mix");
+        assert_eq!(playlists[0].track_count, 2);
+
+        // playlist_tracks: order by position (insertion order)
+        let pt = db.playlist_tracks(pid).unwrap();
+        assert_eq!(pt.len(), 2);
+        assert_eq!(pt[0].id, t1_id);
+        assert_eq!(pt[1].id, t2_id);
+    }
+
+    #[test]
+    fn playlist_duplicate_add_is_ignored() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+        let tracks = db.list_tracks().unwrap();
+        let t1_id = tracks[0].id;
+
+        let pid = db.create_playlist("Dup Test").unwrap();
+        db.add_to_playlist(pid, t1_id).unwrap();
+        db.add_to_playlist(pid, t1_id).unwrap(); // duplicate — should be ignored
+
+        let pt = db.playlist_tracks(pid).unwrap();
+        assert_eq!(pt.len(), 1, "duplicate track must not be added twice");
+    }
+
+    #[test]
+    fn playlist_remove_track() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+        let tracks = db.list_tracks().unwrap();
+        let t1_id = tracks[0].id;
+        let t2_id = tracks[1].id;
+
+        let pid = db.create_playlist("Remove Test").unwrap();
+        db.add_to_playlist(pid, t1_id).unwrap();
+        db.add_to_playlist(pid, t2_id).unwrap();
+
+        db.remove_from_playlist(pid, t1_id).unwrap();
+
+        let pt = db.playlist_tracks(pid).unwrap();
+        assert_eq!(pt.len(), 1);
+        assert_eq!(pt[0].id, t2_id);
+    }
+
+    #[test]
+    fn playlist_delete_cascades() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+        let tracks = db.list_tracks().unwrap();
+        let t1_id = tracks[0].id;
+
+        let pid = db.create_playlist("To Delete").unwrap();
+        db.add_to_playlist(pid, t1_id).unwrap();
+
+        db.delete_playlist(pid).unwrap();
+
+        // Playlist row gone
+        let playlists = db.list_playlists().unwrap();
+        assert!(playlists.is_empty(), "playlist must be deleted");
+
+        // playlist_tracks row cascaded
+        let n: i64 = db.conn
+            .query_row("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1", [pid], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0, "playlist_tracks must cascade-delete");
+    }
+
+    #[test]
+    fn recently_added_returns_newest_first() {
+        let mut db = Db::open_in_memory().unwrap();
+        // Insert in order: track A then track B — B has higher id
+        db.upsert_track(&nt("/m/a.flac", "Track A", "Artist", "Album")).unwrap();
+        db.upsert_track(&nt("/m/b.flac", "Track B", "Artist", "Album")).unwrap();
+
+        let recent = db.recently_added(10).unwrap();
+        assert_eq!(recent.len(), 2);
+        // Newest first: Track B was inserted last so has higher id
+        assert_eq!(recent[0].title, "Track B");
+        assert_eq!(recent[1].title, "Track A");
+    }
+
+    #[test]
+    fn recently_added_respects_limit() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db); // inserts 4 tracks
+
+        let recent = db.recently_added(2).unwrap();
+        assert_eq!(recent.len(), 2, "limit must be respected");
     }
 }

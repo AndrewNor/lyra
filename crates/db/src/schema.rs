@@ -38,5 +38,20 @@ pub fn migrations() -> Migrations<'static> {
         "#,
         ),
         M::up("ALTER TABLE tracks ADD COLUMN genre TEXT;"),
+        M::up(
+            r#"
+        CREATE TABLE playlists (
+            id      INTEGER PRIMARY KEY,
+            name    TEXT NOT NULL,
+            created INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE playlist_tracks (
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id    INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            position    INTEGER NOT NULL,
+            PRIMARY KEY (playlist_id, track_id)
+        );
+        "#,
+        ),
     ])
 }
