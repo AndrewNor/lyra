@@ -10,6 +10,7 @@ use std::thread;
 use std::time::Duration;
 
 use lyra_decoder::{Decoder, SymphoniaDecoder};
+use lyra_dsp::StreamResampler;
 use rtrb::Producer;
 
 use crate::{Error, SEEK_NONE};
@@ -26,17 +27,21 @@ impl DecodeThread {
     /// Spawn a decode thread that:
     /// 1. Opens `path` with `SymphoniaDecoder`.
     /// 2. If the file's sample rate ≠ `device_rate`, resamples to `device_rate`
-    ///    via `lyra_dsp::resample`.
+    ///    via a persistent `lyra_dsp::StreamResampler` (one per track; reset on
+    ///    seek so the filter delay line is flushed without re-allocating).
     /// 3. If the file's channel count ≠ `device_channels`, adapts (upmix mono
     ///    to stereo by duplicating; mixdown N→stereo by summing first two
     ///    channels; or truncate/pad to match).
     /// 4. Pushes interleaved f32 into `producer`, parking briefly when full.
     /// 5. Exits when `stop_flag` is set, `paused_flag` causes it to spin-wait,
     ///    or the file is exhausted.
-    /// 6. Responds to seek commands written to `seek_ms` by calling
-    ///    `SymphoniaDecoder::seek_to_secs`, waiting for the ring buffer to
-    ///    drain (the RT callback will be outputting silence via `flushing`),
-    ///    then updating `frames_played` and clearing the flush flag.
+    /// 6. Responds to seek commands written to `seek_ms` by:
+    ///    a. Seeking the FormatReader.
+    ///    b. Waiting for the ring buffer to drain (RT callback outputs silence).
+    ///    c. Immediately decoding and pushing a small pre-fill of audio into
+    ///       the ring buffer *before* clearing `flushing`, so audio resumes
+    ///       with minimal gap.
+    ///    d. Updating `frames_played` and clearing `flushing`.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn spawn(
         path: &Path,
@@ -101,6 +106,20 @@ impl Drop for DecodeThread {
     }
 }
 
+// ── Seek pre-fill target ─────────────────────────────────────────────────────
+
+/// How many ring-buffer samples to push before clearing the `flushing` flag.
+///
+/// This is the number of interleaved f32 samples (not frames) we aim to fill
+/// into the ring buffer between "drain complete" and "flushing = false".  The
+/// RT callback will see data immediately when it first checks after flushing
+/// clears, eliminating the gap caused by the decode-thread's decode latency.
+///
+/// 8192 interleaved samples = 4096 stereo frames ≈ 85 ms at 48 kHz.
+/// That is enough to cover one or two RT callback periods and a scheduling
+/// round-trip without making the pre-fill loop run overly long.
+const SEEK_PREFILL_SAMPLES: usize = 8192;
+
 /// The body of the decode thread.
 #[allow(clippy::too_many_arguments)]
 fn decode_loop(
@@ -117,6 +136,28 @@ fn decode_loop(
     flushing: &AtomicBool,
     frames_played: &AtomicU64,
 ) {
+    // Build a persistent resampler once per track.  Only created when the file
+    // rate differs from the device rate; otherwise it stays `None` and we skip
+    // resampling entirely (zero overhead).
+    //
+    // Holding ONE resampler across chunks is critical: the polynomial filter
+    // has an internal delay line that must carry over between chunks.  If a
+    // fresh resampler were created per chunk (the old behaviour), the filter
+    // would re-prime from zeros at every boundary, producing a transient
+    // click/pop artefact.  On seek we call `resampler.reset()` instead of
+    // re-creating, which zeroes the delay line without reallocating.
+    let mut stream_resampler: Option<StreamResampler> = if file_rate != device_rate {
+        match StreamResampler::new(file_channels, file_rate, device_rate) {
+            Ok(r) => Some(r),
+            Err(e) => {
+                eprintln!("[lyra-engine] failed to create stream resampler: {e}");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+
     loop {
         if stop.load(Ordering::Relaxed) {
             break;
@@ -143,6 +184,46 @@ fn decode_loop(
                         thread::sleep(Duration::from_millis(2));
                     }
 
+                    // Reset the resampler's filter delay line so no pre-seek
+                    // audio bleeds into the post-seek output.
+                    if let Some(ref mut rs) = stream_resampler {
+                        rs.reset();
+                    }
+
+                    // ── Seek pre-fill ──────────────────────────────────────
+                    // Decode and push a small batch of audio into the ring
+                    // buffer BEFORE clearing the `flushing` flag.  When the RT
+                    // callback next fires it will find real audio waiting,
+                    // eliminating the silence gap caused by the scheduling
+                    // round-trip between "flushing = false" and the first
+                    // decoded chunk arriving.
+                    let mut prefilled = 0usize;
+                    while prefilled < SEEK_PREFILL_SAMPLES {
+                        if stop.load(Ordering::Relaxed) {
+                            return;
+                        }
+                        // Bail if a new seek has arrived while pre-filling.
+                        if seek_ms.load(Ordering::Acquire) != SEEK_NONE {
+                            break;
+                        }
+
+                        let chunk = match decoder.next_chunk() {
+                            Ok(Some(c)) => c,
+                            Ok(None) => break, // EOF reached
+                            Err(e) => {
+                                eprintln!("[lyra-engine] prefill decode error: {e}");
+                                break;
+                            }
+                        };
+
+                        let chunk = resample_chunk(&mut stream_resampler, chunk);
+                        let chunk = adapt_channels(&chunk, file_channels, device_channels);
+
+                        // Push the chunk; bail on stop or new seek.
+                        push_all(&mut producer, &chunk, stop, seek_ms);
+                        prefilled += chunk.len();
+                    }
+
                     // Update the position counter to reflect the new position.
                     let new_frames = (target_secs * device_rate as f64) as u64;
                     frames_played.store(new_frames, Ordering::Release);
@@ -153,7 +234,7 @@ fn decode_loop(
             }
 
             // Clear the flush flag — the RT callback now resumes normal
-            // operation.
+            // operation.  The ring buffer already has pre-filled audio waiting.
             flushing.store(false, Ordering::Release);
             continue;
         }
@@ -174,24 +255,35 @@ fn decode_loop(
             }
         };
 
-        // Resample if the file rate differs from the device rate.
-        let chunk = if file_rate != device_rate {
-            match lyra_dsp::resample(&chunk, file_channels, file_rate, device_rate) {
-                Ok(c) => c,
-                Err(e) => {
-                    eprintln!("[lyra-engine] resample error: {e}");
-                    break;
-                }
-            }
-        } else {
-            chunk
-        };
+        // Resample through the persistent StreamResampler (if needed).
+        let chunk = resample_chunk(&mut stream_resampler, chunk);
 
         // Adapt channel count if necessary.
         let chunk = adapt_channels(&chunk, file_channels, device_channels);
 
         // Push into the ring buffer; park briefly when full so we don't spin.
         push_all(&mut producer, &chunk, stop, seek_ms);
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/// Pass `chunk` through the persistent `StreamResampler` if one is present,
+/// otherwise return it unchanged.
+///
+/// On resampler error, logs and returns an empty vec (the decode loop will
+/// push nothing for this chunk and continue; audio will be briefly silent
+/// rather than crashing).
+fn resample_chunk(resampler: &mut Option<StreamResampler>, chunk: Vec<f32>) -> Vec<f32> {
+    match resampler {
+        None => chunk,
+        Some(rs) => match rs.process_chunk(&chunk) {
+            Ok(out) => out,
+            Err(e) => {
+                eprintln!("[lyra-engine] resample error: {e}");
+                Vec::new()
+            }
+        },
     }
 }
 
