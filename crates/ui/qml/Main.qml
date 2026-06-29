@@ -120,7 +120,7 @@ Kirigami.ApplicationWindow {
                 font.bold: true
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.22
                 color: root.accentColor
-                letterSpacing: -0.5
+                font.letterSpacing: -0.5
             }
 
             Rectangle {
@@ -619,7 +619,7 @@ Kirigami.ApplicationWindow {
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                         color: root.textFaint
                         font.capitalization: Font.AllUppercase
-                        letterSpacing: 1.4
+                        font.letterSpacing: 1.4
                         font.weight: Font.Medium
                     }
 
@@ -685,7 +685,7 @@ Kirigami.ApplicationWindow {
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                         color: root.textFaint
                         font.capitalization: Font.AllUppercase
-                        letterSpacing: 1.4
+                        font.letterSpacing: 1.4
                         font.weight: Font.Medium
                     }
 
@@ -720,7 +720,7 @@ Kirigami.ApplicationWindow {
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                         color: Qt.rgba(1, 1, 1, 0.15)
                         font.capitalization: Font.AllUppercase
-                        letterSpacing: 1.4
+                        font.letterSpacing: 1.4
                         font.weight: Font.Medium
                     }
 
@@ -861,7 +861,7 @@ Kirigami.ApplicationWindow {
                                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                                             color: root.textFaint
                                             font.capitalization: Font.AllUppercase
-                                            letterSpacing: 1.0
+                                            font.letterSpacing: 1.0
                                             font.weight: Font.Medium
                                         }
 
@@ -872,7 +872,7 @@ Kirigami.ApplicationWindow {
                                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                                             color: root.textFaint
                                             font.capitalization: Font.AllUppercase
-                                            letterSpacing: 1.0
+                                            font.letterSpacing: 1.0
                                             font.weight: Font.Medium
                                         }
                                     }
@@ -1008,7 +1008,7 @@ Kirigami.ApplicationWindow {
                                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                                     color: root.textFaint
                                     font.capitalization: Font.AllUppercase
-                                    letterSpacing: 1.0
+                                    font.letterSpacing: 1.0
                                     font.weight: Font.Medium
                                 }
 
@@ -1017,7 +1017,7 @@ Kirigami.ApplicationWindow {
                                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                                     color: root.textFaint
                                     font.capitalization: Font.AllUppercase
-                                    letterSpacing: 1.0
+                                    font.letterSpacing: 1.0
                                     font.weight: Font.Medium
                                 }
                             }
@@ -1090,7 +1090,7 @@ Kirigami.ApplicationWindow {
                                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                                     color: root.textFaint
                                     font.capitalization: Font.AllUppercase
-                                    letterSpacing: 1.0
+                                    font.letterSpacing: 1.0
                                     font.weight: Font.Medium
                                 }
 
@@ -1099,7 +1099,7 @@ Kirigami.ApplicationWindow {
                                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
                                     color: root.textFaint
                                     font.capitalization: Font.AllUppercase
-                                    letterSpacing: 1.0
+                                    font.letterSpacing: 1.0
                                     font.weight: Font.Medium
                                 }
                             }
@@ -1353,7 +1353,7 @@ Kirigami.ApplicationWindow {
                             text: player.state_text || "Stopped"
                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.73
                             font.capitalization: Font.AllUppercase
-                            letterSpacing: 0.9
+                            font.letterSpacing: 0.9
                             color: (player.state_text === "Playing")
                                    ? root.accentColor
                                    : root.textDim

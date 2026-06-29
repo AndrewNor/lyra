@@ -106,7 +106,7 @@ Item {
             opacity: root.enabled ? 1.0 : 0.30
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
             font.weight: root.active ? Font.SemiBold : Font.Normal
-            letterSpacing: root.active ? 0.2 : 0.0
+            font.letterSpacing: root.active ? 0.2 : 0.0
 
             Behavior on color { ColorAnimation { duration: 150 } }
         }
