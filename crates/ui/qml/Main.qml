@@ -25,6 +25,7 @@ Kirigami.ApplicationWindow {
     // ── View state machine ───────────────────────────────────────────────────
     // Possible values: "songs" | "albums" | "album_detail"
     //                  "artists" | "artist_detail"
+    //                  "genres" | "genre_detail"
     property string view: "songs"
 
     // Name of the album/artist currently being drilled into (for the header)
@@ -69,6 +70,13 @@ Kirigami.ApplicationWindow {
     // ── Parsed artists list ──────────────────────────────────────────────────
     property var artists: {
         var s = library.artists_json
+        if (!s || s.length === 0) return []
+        try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    // ── Parsed genres list ───────────────────────────────────────────────────
+    property var genres: {
+        var s = library.genres_json
         if (!s || s.length === 0) return []
         try { return JSON.parse(s) } catch(e) { return [] }
     }
@@ -469,7 +477,11 @@ Kirigami.ApplicationWindow {
                     SidebarItem {
                         iconName: "tag"
                         label: "Genres"
-                        enabled: false
+                        active: root.view === "genres" || root.view === "genre_detail"
+                        onActivated: {
+                            root.view = "genres"
+                            library.loadGenres()
+                        }
                     }
                     SidebarItem {
                         iconName: "view-calendar-recent-events"
@@ -562,12 +574,13 @@ Kirigami.ApplicationWindow {
                 Layout.fillHeight: true
 
                 // ── Songs view (+ detail track lists) ──────────────────────
-                // Visible for "songs", "album_detail", "artist_detail"
+                // Visible for "songs", "album_detail", "artist_detail", "genre_detail"
                 Item {
                     anchors.fill: parent
                     visible: root.view === "songs"
                              || root.view === "album_detail"
                              || root.view === "artist_detail"
+                             || root.view === "genre_detail"
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -576,9 +589,13 @@ Kirigami.ApplicationWindow {
                         // Detail header — shown only in drill-down views
                         Item {
                             Layout.fillWidth: true
-                            height: (root.view === "album_detail" || root.view === "artist_detail")
+                            height: (root.view === "album_detail"
+                                     || root.view === "artist_detail"
+                                     || root.view === "genre_detail")
                                     ? 44 : 0
-                            visible: root.view === "album_detail" || root.view === "artist_detail"
+                            visible: root.view === "album_detail"
+                                     || root.view === "artist_detail"
+                                     || root.view === "genre_detail"
                             clip: true
 
                             Rectangle {
@@ -595,10 +612,14 @@ Kirigami.ApplicationWindow {
                                 Controls.ToolButton {
                                     text: root.view === "album_detail"
                                           ? "‹ Albums"
-                                          : "‹ Artists"
+                                          : root.view === "genre_detail"
+                                            ? "‹ Genres"
+                                            : "‹ Artists"
                                     onClicked: {
                                         if (root.view === "album_detail")
                                             root.view = "albums"
+                                        else if (root.view === "genre_detail")
+                                            root.view = "genres"
                                         else
                                             root.view = "artists"
                                     }
@@ -851,6 +872,88 @@ Kirigami.ApplicationWindow {
                             text: "No artists found"
                             explanation: "Click Scan to index your music library."
                             icon.name: "user-identity"
+                        }
+                    }
+                }
+
+                // ── Genres list view ────────────────────────────────────────
+                Item {
+                    anchors.fill: parent
+                    visible: root.view === "genres"
+
+                    ListView {
+                        id: genreList
+                        anchors.fill: parent
+                        model: root.genres
+                        clip: true
+                        reuseItems: true
+
+                        Controls.ScrollBar.vertical: Controls.ScrollBar {
+                            policy: Controls.ScrollBar.AsNeeded
+                        }
+
+                        header: Item {
+                            width: genreList.width
+                            height: 32
+
+                            Rectangle {
+                                anchors.fill: parent
+                                color: Kirigami.Theme.backgroundColor || "#ffffff"
+                            }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: Kirigami.Units.largeSpacing
+                                anchors.rightMargin: Kirigami.Units.largeSpacing
+                                spacing: 0
+
+                                Controls.Label {
+                                    Layout.fillWidth: true
+                                    text: "Genre"
+                                    font.bold: true
+                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 0.4
+                                }
+
+                                Controls.Label {
+                                    text: "Tracks"
+                                    font.bold: true
+                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 0.4
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: 1
+                                color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                            }
+                        }
+
+                        headerPositioning: ListView.OverlayHeader
+
+                        delegate: GenreRow {
+                            width: genreList.width
+                            genreData: modelData
+                            onRowClicked: {
+                                if (!modelData) return
+                                root.detailName = modelData.name || ""
+                                library.loadGenreTracks(modelData.name || "")
+                                root.view = "genre_detail"
+                            }
+                        }
+
+                        Kirigami.PlaceholderMessage {
+                            anchors.centerIn: parent
+                            visible: genreList.count === 0 && !(library.scanning || false)
+                            text: "No genres found"
+                            explanation: "Click Scan to index your music library."
+                            icon.name: "tag"
                         }
                     }
                 }

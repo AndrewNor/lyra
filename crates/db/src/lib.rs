@@ -3,7 +3,7 @@ mod schema;
 pub mod model;
 pub mod queries;
 
-pub use model::{Album, Artist, NewTrack, Track};
+pub use model::{Album, Artist, Genre, NewTrack, Track};
 
 use std::path::Path;
 
@@ -65,5 +65,16 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let tables = names(&db, "table");
         assert!(tables.iter().any(|n| n == "tracks_fts"), "missing FTS5 table");
+    }
+
+    #[test]
+    fn migration_adds_genre_column() {
+        let db = Db::open_in_memory().unwrap();
+        // Should not error — genre column must exist after migrations.
+        db.conn.execute("INSERT INTO tracks(path,title,mtime,genre) VALUES('/t.flac','T',1,'Rock')", []).unwrap();
+        let g: Option<String> = db.conn
+            .query_row("SELECT genre FROM tracks WHERE path='/t.flac'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(g.as_deref(), Some("Rock"));
     }
 }

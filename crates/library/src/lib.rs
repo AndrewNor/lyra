@@ -126,6 +126,7 @@ pub fn scan(root: &Path, db: &mut lyra_db::Db, art: &ArtCache) -> Result<ScanSum
             duration_ms: tags.duration_ms,
             mtime,
             cover_thumb,
+            genre: tags.genre.clone(),
         };
 
         match db.upsert_track(&new_track) {
