@@ -10,7 +10,7 @@ mod decode_loop;
 mod output;
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cpal::traits::StreamTrait;
@@ -97,6 +97,11 @@ pub struct Engine {
     /// contents and outputs silence.  Set by `seek()`, cleared by the decode
     /// thread once the seek is complete.
     flushing: Arc<AtomicBool>,
+
+    /// Master volume gain, stored as f32 bits in an AtomicU32.
+    /// Range 0.0..=1.0.  Default 1.0 (full volume).
+    /// Written by `set_volume()` on the UI thread; read once per RT callback.
+    volume: Arc<AtomicU32>,
 }
 
 impl Engine {
@@ -117,6 +122,7 @@ impl Engine {
             seek_ms: Arc::new(AtomicU64::new(SEEK_NONE)),
             seek_generation: Arc::new(AtomicU64::new(0)),
             flushing: Arc::new(AtomicBool::new(false)),
+            volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
         })
     }
 
@@ -151,6 +157,7 @@ impl Engine {
             Arc::clone(&self.frames_played),
             Arc::clone(&self.flushing),
             self.out.channels,
+            Arc::clone(&self.volume),
         )?;
 
         // Spawn the decode thread (producer end).
@@ -238,6 +245,18 @@ impl Engine {
         self.seek_generation.fetch_add(1, Ordering::Release);
 
         Ok(())
+    }
+
+    /// Set the master volume gain.  `v` is clamped to `0.0..=1.0`.
+    /// Takes effect on the next audio callback (no latency guarantee).
+    pub fn set_volume(&self, v: f32) {
+        let clamped = v.clamp(0.0, 1.0);
+        self.volume.store(clamped.to_bits(), Ordering::Relaxed);
+    }
+
+    /// Return the current master volume gain (0.0..=1.0).
+    pub fn volume(&self) -> f32 {
+        f32::from_bits(self.volume.load(Ordering::Relaxed))
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────────

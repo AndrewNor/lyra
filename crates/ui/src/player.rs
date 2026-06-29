@@ -28,6 +28,12 @@ pub mod qobject {
         #[qproperty(f64, position_secs)]
         /// Total duration of the current track in seconds (set when a track starts).
         #[qproperty(f64, duration_secs)]
+        /// Master volume gain, 0.0..=1.0.  Default 1.0.
+        #[qproperty(f64, volume)]
+        /// Whether shuffle is currently enabled.
+        #[qproperty(bool, shuffle)]
+        /// Current repeat mode: "off", "all", or "one".
+        #[qproperty(QString, repeat_mode)]
         type Player = super::PlayerRust;
 
         /// Initialise the MPRIS2 D-Bus server.  Call once from QML
@@ -80,6 +86,21 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "seek"]
         fn seek(self: Pin<&mut Player>, fraction: f64);
+
+        /// Set the master volume (0.0..=1.0).  Updates the engine immediately.
+        #[qinvokable]
+        #[cxx_name = "changeVolume"]
+        fn set_volume_invokable(self: Pin<&mut Player>, v: f64);
+
+        /// Toggle shuffle on/off.
+        #[qinvokable]
+        #[cxx_name = "toggleShuffle"]
+        fn toggle_shuffle(self: Pin<&mut Player>);
+
+        /// Cycle repeat mode: off → all → one → off.
+        #[qinvokable]
+        #[cxx_name = "cycleRepeat"]
+        fn cycle_repeat(self: Pin<&mut Player>);
     }
 
     impl cxx_qt::Threading for Player {}
@@ -88,7 +109,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use lyra_core::PlayQueue;
+use lyra_core::{PlayQueue, RepeatMode};
 use lyra_engine::Engine;
 use mpris_server::PlaybackStatus;
 
@@ -123,6 +144,15 @@ pub struct PlayerRust {
     /// Duration of the current track in seconds (set when a track starts).
     duration_secs: f64,
 
+    /// Master volume gain, 0.0..=1.0.  Persisted across tracks.
+    volume: f64,
+
+    /// Whether shuffle is currently active.
+    shuffle: bool,
+
+    /// Current repeat mode as a string: "off", "all", or "one".
+    repeat_mode: QString,
+
     /// Lazily initialised on first `play()`.  `!Send` — Qt thread only.
     engine: Option<Engine>,
 
@@ -149,6 +179,9 @@ impl Default for PlayerRust {
             lyrics_json: QString::from(EMPTY_LYRICS_JSON),
             position_secs: 0.0,
             duration_secs: 0.0,
+            volume: 1.0,
+            shuffle: false,
+            repeat_mode: QString::from("off"),
             engine: None,
             play_queue: PlayQueue::new(),
             playlist: Vec::new(),
@@ -256,6 +289,7 @@ impl qobject::Player {
     // ── Engine management ─────────────────────────────────────────────────────
 
     /// Ensure the engine exists, returning false and setting state_text on error.
+    /// When the engine is lazily created, the stored volume is applied immediately.
     fn ensure_engine(mut self: Pin<&mut Self>) -> bool {
         let needs_init = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
@@ -265,7 +299,10 @@ impl qobject::Player {
         if needs_init {
             match Engine::new() {
                 Ok(e) => {
-                    unsafe { self.as_mut().rust_mut().get_unchecked_mut() }.engine = Some(e);
+                    let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                    // Apply the stored volume so it persists across tracks.
+                    e.set_volume(r.volume as f32);
+                    r.engine = Some(e);
                 }
                 Err(e) => {
                     let msg = format!("Engine init error: {e}");
@@ -526,5 +563,48 @@ impl qobject::Player {
         // Update position display immediately so the UI feels responsive,
         // even though the engine seek may be a no-op.
         self.as_mut().set_position_secs(target_secs);
+    }
+
+    fn set_volume_invokable(mut self: Pin<&mut Self>, v: f64) {
+        let clamped = v.clamp(0.0, 1.0);
+        // Store the value so it persists and is applied when the engine is created.
+        {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.volume = clamped;
+            if let Some(e) = r.engine.as_ref() {
+                e.set_volume(clamped as f32);
+            }
+        }
+        self.as_mut().set_volume(clamped);
+    }
+
+    fn toggle_shuffle(mut self: Pin<&mut Self>) {
+        let new_shuffle = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            let s = !r.shuffle;
+            r.shuffle = s;
+            r.play_queue.set_shuffle(s);
+            s
+        };
+        self.as_mut().set_shuffle(new_shuffle);
+    }
+
+    fn cycle_repeat(mut self: Pin<&mut Self>) {
+        let new_mode_str = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            let current = r.play_queue.repeat();
+            let next = match current {
+                RepeatMode::Off => RepeatMode::All,
+                RepeatMode::All => RepeatMode::One,
+                RepeatMode::One => RepeatMode::Off,
+            };
+            r.play_queue.set_repeat(next);
+            match next {
+                RepeatMode::Off => "off",
+                RepeatMode::All => "all",
+                RepeatMode::One => "one",
+            }
+        };
+        self.as_mut().set_repeat_mode(QString::from(new_mode_str));
     }
 }

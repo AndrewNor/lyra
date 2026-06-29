@@ -5,7 +5,7 @@
 //! underrun it writes silence (0.0).
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, HostId, Stream, StreamConfig};
@@ -75,6 +75,7 @@ pub(crate) fn build_output_stream(
     frames_played: Arc<AtomicU64>,
     flushing: Arc<AtomicBool>,
     channels: u16,
+    volume: Arc<AtomicU32>,
 ) -> crate::Result<Stream> {
     let ch = channels as u64;
 
@@ -96,11 +97,13 @@ pub(crate) fn build_output_stream(
                     return;
                 }
 
+                // Load volume once per callback — RT-safe atomic read, no alloc/lock.
+                let gain = f32::from_bits(volume.load(Ordering::Relaxed));
                 let mut real_samples: u64 = 0;
                 for sample in buf.iter_mut() {
                     match consumer.pop() {
                         Ok(s) => {
-                            *sample = s;
+                            *sample = s * gain;
                             real_samples += 1;
                         }
                         Err(_) => {

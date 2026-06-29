@@ -321,9 +321,11 @@ Kirigami.ApplicationWindow {
 
                 Controls.ToolButton {
                     icon.name: "media-playlist-shuffle"
-                    opacity: 0.30
+                    opacity: player.shuffle ? 1.0 : 0.50
+                    icon.color: player.shuffle ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+                    onClicked: player.toggleShuffle()
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: "Shuffle — coming soon"
+                    Controls.ToolTip.text: player.shuffle ? "Shuffle: On" : "Shuffle: Off"
                     Controls.ToolTip.delay: 400
                 }
 
@@ -414,10 +416,20 @@ Kirigami.ApplicationWindow {
                 }
 
                 Controls.ToolButton {
-                    icon.name: "media-playlist-repeat"
-                    opacity: 0.30
+                    icon.name: (player.repeat_mode === "one")
+                                ? "media-playlist-repeat-song"
+                                : "media-playlist-repeat"
+                    opacity: (player.repeat_mode !== "off") ? 1.0 : 0.50
+                    icon.color: (player.repeat_mode !== "off")
+                                 ? Kirigami.Theme.highlightColor
+                                 : Kirigami.Theme.textColor
+                    onClicked: player.cycleRepeat()
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: "Repeat — coming soon"
+                    Controls.ToolTip.text: {
+                        if (player.repeat_mode === "all") return "Repeat: All"
+                        if (player.repeat_mode === "one") return "Repeat: One"
+                        return "Repeat: Off"
+                    }
                     Controls.ToolTip.delay: 400
                 }
             }
@@ -526,11 +538,12 @@ Kirigami.ApplicationWindow {
                         id: volumeSlider
                         Layout.fillWidth: true
                         from: 0
-                        to: 100
-                        value: 80
+                        to: 1
+                        value: player.volume
                         Controls.ToolTip.visible: hovered
-                        Controls.ToolTip.text: "Volume — visual only (engine API coming soon)"
+                        Controls.ToolTip.text: "Volume: " + Math.round(player.volume * 100) + "%"
                         Controls.ToolTip.delay: 400
+                        onMoved: player.changeVolume(value)
 
                         background: Rectangle {
                             x: volumeSlider.leftPadding
