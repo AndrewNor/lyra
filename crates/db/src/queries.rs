@@ -1,6 +1,6 @@
 //! Database query implementations.
 
-use crate::{model::{Album, Artist, NewTrack, Track}, Db, Result};
+use crate::{model::{Album, Artist, Genre, NewTrack, Track}, Db, Result};
 
 const SELECT_TRACK: &str = "SELECT t.id, t.path, t.title, ar.name, al.title, t.track_no, t.duration_ms, t.cover_thumb \
     FROM tracks t LEFT JOIN artists ar ON ar.id=t.artist_id LEFT JOIN albums al ON al.id=t.album_id";
@@ -42,17 +42,18 @@ impl Db {
             None => None,
         };
         tx.execute(
-            "INSERT INTO tracks(path,title,artist_id,album_id,track_no,disc_no,duration_ms,mtime,cover_thumb)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)
+            "INSERT INTO tracks(path,title,artist_id,album_id,track_no,disc_no,duration_ms,mtime,cover_thumb,genre)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)
              ON CONFLICT(path) DO UPDATE SET
                title=excluded.title, artist_id=excluded.artist_id, album_id=excluded.album_id,
                track_no=excluded.track_no, disc_no=excluded.disc_no,
-               duration_ms=excluded.duration_ms, mtime=excluded.mtime, cover_thumb=excluded.cover_thumb",
+               duration_ms=excluded.duration_ms, mtime=excluded.mtime, cover_thumb=excluded.cover_thumb,
+               genre=excluded.genre",
             rusqlite::params![
                 t.path, t.title, artist_id, album_id,
                 t.track_no, t.disc_no,
                 t.duration_ms.map(|d| d as i64),
-                t.mtime, t.cover_thumb
+                t.mtime, t.cover_thumb, t.genre
             ],
         )?;
         let id: i64 = tx.query_row("SELECT id FROM tracks WHERE path=?1", [&t.path], |r| r.get(0))?;
@@ -172,6 +173,37 @@ impl Db {
         let rows = stmt.query_map([artist_id], row_to_track)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
+
+    /// Returns all genres with track counts, ordered alphabetically.
+    /// Rows with NULL or empty genre are excluded.
+    pub fn list_genres(&self) -> Result<Vec<Genre>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT genre, COUNT(*) AS track_count \
+             FROM tracks \
+             WHERE genre IS NOT NULL AND genre <> '' \
+             GROUP BY genre \
+             ORDER BY genre",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Genre {
+                name:        r.get(0)?,
+                track_count: r.get(1)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Returns all tracks for the given genre, ordered by title.
+    pub fn tracks_by_genre(&self, genre: &str) -> Result<Vec<Track>> {
+        let sql = format!(
+            "{SELECT_TRACK} \
+             WHERE t.genre = ?1 \
+             ORDER BY t.title"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([genre], row_to_track)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
 }
 
 #[cfg(test)]
@@ -184,6 +216,17 @@ mod tests {
             artist: Some(artist.into()), album: Some(album.into()),
             album_artist: Some(artist.into()), track_no: Some(1), disc_no: Some(1),
             year: Some(2020), duration_ms: Some(180_000), mtime: 100, cover_thumb: None,
+            genre: None,
+        }
+    }
+
+    fn nt_with_genre(path: &str, title: &str, artist: &str, album: &str, genre: &str) -> NewTrack {
+        NewTrack {
+            path: path.into(), title: title.into(),
+            artist: Some(artist.into()), album: Some(album.into()),
+            album_artist: Some(artist.into()), track_no: Some(1), disc_no: Some(1),
+            year: Some(2020), duration_ms: Some(180_000), mtime: 100,
+            cover_thumb: None, genre: Some(genre.into()),
         }
     }
 
@@ -331,5 +374,58 @@ mod tests {
         assert_eq!(db.search("bonobo").unwrap()[0].title, "Kerala");
         assert_eq!(db.search("nonsensequery").unwrap().len(), 0);
         assert_eq!(db.list_tracks().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn list_genres_groups_and_counts() {
+        let mut db = Db::open_in_memory().unwrap();
+        db.upsert_track(&nt_with_genre("/m/r1.flac", "Rock 1", "A", "Al1", "Rock")).unwrap();
+        db.upsert_track(&nt_with_genre("/m/r2.flac", "Rock 2", "B", "Al2", "Rock")).unwrap();
+        db.upsert_track(&nt_with_genre("/m/j1.flac", "Jazz 1", "C", "Al3", "Jazz")).unwrap();
+
+        let genres = db.list_genres().unwrap();
+        assert_eq!(genres.len(), 2, "expected 2 genres");
+        // Sorted alphabetically: Jazz, Rock
+        assert_eq!(genres[0].name, "Jazz");
+        assert_eq!(genres[0].track_count, 1);
+        assert_eq!(genres[1].name, "Rock");
+        assert_eq!(genres[1].track_count, 2);
+    }
+
+    #[test]
+    fn tracks_by_genre_returns_correct_rows() {
+        let mut db = Db::open_in_memory().unwrap();
+        db.upsert_track(&nt_with_genre("/m/r1.flac", "Rock 1", "A", "Al1", "Rock")).unwrap();
+        db.upsert_track(&nt_with_genre("/m/r2.flac", "Rock 2", "B", "Al2", "Rock")).unwrap();
+        db.upsert_track(&nt_with_genre("/m/j1.flac", "Jazz 1", "C", "Al3", "Jazz")).unwrap();
+
+        let rock = db.tracks_by_genre("Rock").unwrap();
+        assert_eq!(rock.len(), 2, "expected 2 Rock tracks");
+        // Ordered by title
+        assert_eq!(rock[0].title, "Rock 1");
+        assert_eq!(rock[1].title, "Rock 2");
+
+        let jazz = db.tracks_by_genre("Jazz").unwrap();
+        assert_eq!(jazz.len(), 1, "expected 1 Jazz track");
+        assert_eq!(jazz[0].title, "Jazz 1");
+    }
+
+    #[test]
+    fn list_genres_ignores_null_and_empty() {
+        let mut db = Db::open_in_memory().unwrap();
+        // Track with no genre
+        let no_genre = NewTrack {
+            path: "/m/ng.flac".into(), title: "No Genre".into(),
+            artist: Some("A".into()), album: Some("Al".into()),
+            album_artist: Some("A".into()), track_no: Some(1), disc_no: Some(1),
+            year: Some(2020), duration_ms: Some(180_000), mtime: 100,
+            cover_thumb: None, genre: None,
+        };
+        db.upsert_track(&no_genre).unwrap();
+        db.upsert_track(&nt_with_genre("/m/r1.flac", "Rock 1", "B", "Al2", "Rock")).unwrap();
+
+        let genres = db.list_genres().unwrap();
+        assert_eq!(genres.len(), 1, "NULL genre must not appear in list");
+        assert_eq!(genres[0].name, "Rock");
     }
 }
