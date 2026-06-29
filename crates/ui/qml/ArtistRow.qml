@@ -13,7 +13,7 @@ Item {
 
     signal rowClicked()
 
-    height: 52
+    height: 60
 
     // ── Background ──────────────────────────────────────────────────────────
     Rectangle {
@@ -24,15 +24,19 @@ Item {
                    ? Qt.rgba(tc.r, tc.g, tc.b, 0.05)
                    : "transparent"
         }
+
+        Behavior on color { ColorAnimation { duration: 120 } }
     }
 
     // ── Bottom separator ────────────────────────────────────────────────────
     Rectangle {
         anchors.bottom: parent.bottom
-        width: parent.width
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: Kirigami.Units.largeSpacing + 54
         height: 1
         color: Kirigami.Theme.separatorColor || "#e0e0e0"
-        opacity: 0.4
+        opacity: 0.35
     }
 
     // ── Content ─────────────────────────────────────────────────────────────
@@ -40,23 +44,42 @@ Item {
         anchors.fill: parent
         anchors.leftMargin: Kirigami.Units.largeSpacing
         anchors.rightMargin: Kirigami.Units.largeSpacing
-        spacing: Kirigami.Units.smallSpacing
+        spacing: Kirigami.Units.largeSpacing - 2
 
-        // Avatar placeholder circle
-        Rectangle {
-            width: 36
-            height: 36
-            radius: 18
-            color: Kirigami.Theme.alternateBackgroundColor || "#f0f0f0"
-            border.color: Kirigami.Theme.separatorColor || "#d0d0d0"
-            border.width: 1
+        // Avatar circle
+        Item {
+            width: 44
+            height: 44
 
-            Kirigami.Icon {
+            // Shadow
+            Rectangle {
                 anchors.centerIn: parent
-                source: "user-identity"
-                width: 20
-                height: 20
-                color: Kirigami.Theme.disabledTextColor || "#888888"
+                width: parent.width + 2
+                height: parent.height + 2
+                anchors.verticalCenterOffset: 2
+                radius: (parent.width + 2) / 2
+                color: {
+                    var tc = Kirigami.Theme.textColor
+                    return tc ? Qt.rgba(tc.r, tc.g, tc.b, 0.10) : "#00000010"
+                }
+            }
+
+            Rectangle {
+                anchors.fill: parent
+                radius: parent.width / 2
+                color: {
+                    var hc = Kirigami.Theme.highlightColor
+                    var ac = Kirigami.Theme.alternateBackgroundColor
+                    return ac || "#f0f0f0"
+                }
+
+                Kirigami.Icon {
+                    anchors.centerIn: parent
+                    source: "user-identity"
+                    width: 22
+                    height: 22
+                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                }
             }
         }
 
@@ -71,8 +94,8 @@ Item {
                 text: (root.artistData && root.artistData.name)
                       ? root.artistData.name
                       : "(unknown)"
-                font.bold: true
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
+                font.weight: Font.Medium
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.97
                 color: Kirigami.Theme.textColor || "#000000"
             }
 
@@ -84,7 +107,7 @@ Item {
                     var ac = root.artistData.album_count || 0
                     var tc = root.artistData.track_count || 0
                     return ac + (ac === 1 ? " album" : " albums")
-                           + " · "
+                           + "  ·  "
                            + tc + (tc === 1 ? " track" : " tracks")
                 }
                 color: Kirigami.Theme.disabledTextColor || "#888888"
@@ -95,9 +118,12 @@ Item {
         // Disclosure chevron
         Kirigami.Icon {
             source: "arrow-right"
-            width: 16
-            height: 16
+            width: 14
+            height: 14
             color: Kirigami.Theme.disabledTextColor || "#888888"
+            opacity: rowHover.containsMouse ? 0.9 : 0.45
+
+            Behavior on opacity { NumberAnimation { duration: 120 } }
         }
     }
 

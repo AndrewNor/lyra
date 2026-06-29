@@ -16,58 +16,90 @@ Item {
     // ── Cover square ────────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 6
-        spacing: 6
+        anchors.margins: Kirigami.Units.smallSpacing
+        spacing: Kirigami.Units.smallSpacing
 
-        Rectangle {
+        Item {
             Layout.fillWidth: true
             Layout.preferredHeight: width
-            radius: 6
-            color: Kirigami.Theme.alternateBackgroundColor || "#f0f0f0"
-            clip: true
-            border.color: Kirigami.Theme.separatorColor || "#d0d0d0"
-            border.width: 1
 
-            // Hover shadow overlay
+            // Shadow layer underneath
             Rectangle {
-                anchors.fill: parent
-                radius: 6
+                anchors.centerIn: parent
+                width: parent.width - 4
+                height: parent.height - 4
+                anchors.verticalCenterOffset: 4
+                radius: Kirigami.Units.gridUnit
                 color: {
                     var tc = Kirigami.Theme.textColor
-                    return (cardHover.containsMouse && tc)
-                           ? Qt.rgba(tc.r, tc.g, tc.b, 0.08)
-                           : "transparent"
+                    return tc ? Qt.rgba(tc.r, tc.g, tc.b, 0.18) : "#00000020"
                 }
-                z: 2
+                // Blur is not available, so we use opacity trick
+                opacity: cardHover.containsMouse ? 0.25 : 0.15
+
+                Behavior on opacity { NumberAnimation { duration: 150 } }
             }
 
-            Image {
-                id: coverImg
+            Rectangle {
                 anchors.fill: parent
-                source: (root.albumData && root.albumData.cover_thumb
-                         && root.albumData.cover_thumb.length > 0)
-                        ? "file://" + root.albumData.cover_thumb
-                        : ""
-                fillMode: Image.PreserveAspectCrop
+                radius: Kirigami.Units.gridUnit
+                color: Kirigami.Theme.alternateBackgroundColor || "#f0f0f0"
                 clip: true
-                visible: status === Image.Ready
-                asynchronous: true
+
+                // Hover wash on top
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Kirigami.Units.gridUnit
+                    color: {
+                        var tc = Kirigami.Theme.textColor
+                        return (cardHover.containsMouse && tc)
+                               ? Qt.rgba(tc.r, tc.g, tc.b, 0.08)
+                               : "transparent"
+                    }
+                    z: 2
+
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
+
+                Image {
+                    id: coverImg
+                    anchors.fill: parent
+                    source: (root.albumData && root.albumData.cover_thumb
+                             && root.albumData.cover_thumb.length > 0)
+                            ? "file://" + root.albumData.cover_thumb
+                            : ""
+                    fillMode: Image.PreserveAspectCrop
+                    clip: true
+                    visible: status === Image.Ready
+                    asynchronous: true
+                }
+
+                Kirigami.Icon {
+                    anchors.centerIn: parent
+                    source: "media-album-cover"
+                    width: 40
+                    height: 40
+                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                    visible: !coverImg.visible
+                }
             }
 
-            Kirigami.Icon {
-                anchors.centerIn: parent
-                source: "media-album-cover"
-                width: 40
-                height: 40
-                color: Kirigami.Theme.disabledTextColor || "#888888"
-                visible: !coverImg.visible
+            // Lift animation: slight scale on hover
+            transform: Scale {
+                origin.x: parent.width / 2
+                origin.y: parent.height / 2
+                xScale: cardHover.containsMouse ? 1.02 : 1.0
+                yScale: cardHover.containsMouse ? 1.02 : 1.0
+
+                Behavior on xScale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                Behavior on yScale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
             }
         }
 
         // ── Text block below the cover ────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2
+            spacing: 1
 
             Controls.Label {
                 Layout.fillWidth: true
@@ -75,8 +107,8 @@ Item {
                 text: (root.albumData && root.albumData.title)
                       ? root.albumData.title
                       : "(untitled)"
-                font.bold: true
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                font.weight: Font.Medium
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.90
                 color: Kirigami.Theme.textColor || "#000000"
             }
 
@@ -99,7 +131,8 @@ Item {
                     return n + (n === 1 ? " track" : " tracks")
                 }
                 color: Kirigami.Theme.disabledTextColor || "#888888"
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.76
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.75
+                opacity: 0.7
             }
         }
     }

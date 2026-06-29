@@ -15,7 +15,7 @@ Item {
 
     signal trackClicked(int idx)
 
-    height: 52
+    height: 60
 
     // ── Background ──────────────────────────────────────────────────────────
     Rectangle {
@@ -24,39 +24,69 @@ Item {
             var hc = Kirigami.Theme.highlightColor
             var tc = Kirigami.Theme.textColor
             if (root.isCurrentTrack && hc) {
-                return Qt.rgba(hc.r, hc.g, hc.b, 0.18)
+                return Qt.rgba(hc.r, hc.g, hc.b, 0.12)
             }
             if (delegateHover.containsMouse && tc) {
                 return Qt.rgba(tc.r, tc.g, tc.b, 0.05)
             }
             return "transparent"
         }
+
+        Behavior on color { ColorAnimation { duration: 120 } }
+    }
+
+    // ── Left accent bar for now-playing ────────────────────────────────────
+    Rectangle {
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: 3
+        radius: 1.5
+        color: Kirigami.Theme.highlightColor || "#3daee9"
+        opacity: root.isCurrentTrack ? 1.0 : 0.0
+
+        Behavior on opacity { NumberAnimation { duration: 150 } }
     }
 
     // ── Bottom separator ────────────────────────────────────────────────────
     Rectangle {
         anchors.bottom: parent.bottom
-        width: parent.width
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.leftMargin: Kirigami.Units.largeSpacing
         height: 1
         color: Kirigami.Theme.separatorColor || "#e0e0e0"
-        opacity: 0.4
+        opacity: 0.35
     }
 
     // ── Content ─────────────────────────────────────────────────────────────
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: 6
+        anchors.leftMargin: Kirigami.Units.largeSpacing
         anchors.rightMargin: Kirigami.Units.largeSpacing
         spacing: 0
 
         // Album art thumbnail
         Item {
-            width: 46
-            height: 46
+            width: 48
+            height: 48
+
+            // Shadow simulation: a slightly larger, darker rectangle underneath
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width + 2
+                height: parent.height + 2
+                radius: Kirigami.Units.smallSpacing + 1
+                color: {
+                    var tc = Kirigami.Theme.textColor
+                    return tc ? Qt.rgba(tc.r, tc.g, tc.b, 0.12) : "#00000012"
+                }
+                visible: thumbImg.status === Image.Ready || true
+            }
 
             Rectangle {
                 anchors.fill: parent
-                radius: 4
+                radius: Kirigami.Units.smallSpacing
                 color: Kirigami.Theme.alternateBackgroundColor || "#f0f0f0"
                 clip: true
 
@@ -80,26 +110,26 @@ Item {
                     color: Kirigami.Theme.disabledTextColor || "#888888"
                     visible: !thumbImg.visible
                 }
-            }
 
-            // Playing indicator overlay
-            Rectangle {
-                anchors.fill: parent
-                radius: 4
-                color: {
-                    var hc = Kirigami.Theme.highlightColor
-                    return (hc && root.isCurrentTrack)
-                           ? Qt.rgba(hc.r, hc.g, hc.b, 0.7)
-                           : "transparent"
-                }
-                visible: root.isCurrentTrack
+                // Playing indicator overlay
+                Rectangle {
+                    anchors.fill: parent
+                    radius: Kirigami.Units.smallSpacing
+                    color: {
+                        var hc = Kirigami.Theme.highlightColor
+                        return (hc && root.isCurrentTrack)
+                               ? Qt.rgba(hc.r, hc.g, hc.b, 0.65)
+                               : "transparent"
+                    }
+                    visible: root.isCurrentTrack
 
-                Kirigami.Icon {
-                    anchors.centerIn: parent
-                    source: "media-playback-start"
-                    width: 20
-                    height: 20
-                    color: Kirigami.Theme.highlightedTextColor || "#ffffff"
+                    Kirigami.Icon {
+                        anchors.centerIn: parent
+                        source: "media-playback-start"
+                        width: 20
+                        height: 20
+                        color: "white"
+                    }
                 }
             }
         }
@@ -107,8 +137,8 @@ Item {
         // Title + Artist
         ColumnLayout {
             Layout.fillWidth: true
-            Layout.leftMargin: 10
-            spacing: 3
+            Layout.leftMargin: Kirigami.Units.largeSpacing
+            spacing: 2
 
             Controls.Label {
                 Layout.fillWidth: true
@@ -117,22 +147,26 @@ Item {
                       ? root.trackData.title
                       : "(untitled)"
                 font.bold: root.isCurrentTrack
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
-                color: Kirigami.Theme.textColor || "#000000"
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.97
+                color: root.isCurrentTrack
+                       ? (Kirigami.Theme.highlightColor || "#3daee9")
+                       : (Kirigami.Theme.textColor || "#000000")
+
+                Behavior on color { ColorAnimation { duration: 150 } }
             }
             Controls.Label {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: (root.trackData && root.trackData.artist) ? root.trackData.artist : ""
                 color: Kirigami.Theme.disabledTextColor || "#888888"
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.83
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
                 visible: text.length > 0
             }
         }
 
-        // Duration
+        // Duration — fixed-width tabular style
         Controls.Label {
-            Layout.preferredWidth: 48
+            Layout.preferredWidth: 44
             horizontalAlignment: Text.AlignRight
             text: {
                 var ms = (root.trackData && root.trackData.durationMs) ? root.trackData.durationMs : 0
@@ -143,7 +177,8 @@ Item {
                 return minutes + ":" + (seconds < 10 ? "0" : "") + seconds
             }
             color: Kirigami.Theme.disabledTextColor || "#888888"
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+            font.features: { "tnum": 1 }
         }
     }
 
