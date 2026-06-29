@@ -1052,22 +1052,52 @@ Kirigami.ApplicationWindow {
                         color: Kirigami.Theme.separatorColor || "#d0d0d0"
                     }
 
-                    Controls.Label {
-                        text: "Up Next"
-                        font.bold: true
-                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
-                        color: Kirigami.Theme.disabledTextColor || "#888888"
-                        font.capitalization: Font.AllUppercase
-                        font.letterSpacing: 0.5
+                    // ── Tab toggle: Up Next / Lyrics ─────────────────────────
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 0
+
+                        property string activeTab: "queue"
+
+                        Controls.ToolButton {
+                            id: tabQueueBtn
+                            text: "Up Next"
+                            font.bold: parent.activeTab === "queue"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                            flat: parent.activeTab !== "queue"
+                            checkable: false
+                            Layout.fillWidth: true
+                            onClicked: parent.activeTab = "queue"
+                            opacity: parent.activeTab === "queue" ? 1.0 : 0.55
+                        }
+
+                        Rectangle {
+                            width: 1
+                            height: 16
+                            color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                        }
+
+                        Controls.ToolButton {
+                            id: tabLyricsBtn
+                            text: "Lyrics"
+                            font.bold: parent.activeTab === "lyrics"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                            flat: parent.activeTab !== "lyrics"
+                            checkable: false
+                            Layout.fillWidth: true
+                            onClicked: parent.activeTab = "lyrics"
+                            opacity: parent.activeTab === "lyrics" ? 1.0 : 0.55
+                        }
                     }
 
-                    // Queue list
+                    // ── Up Next queue (shown when tab = "queue") ─────────────
                     ListView {
                         id: queueList
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         model: root.queueTracks
                         clip: true
+                        visible: tabQueueBtn.parent.activeTab === "queue"
 
                         Controls.ScrollBar.vertical: Controls.ScrollBar {
                             policy: Controls.ScrollBar.AsNeeded
@@ -1145,6 +1175,131 @@ Kirigami.ApplicationWindow {
                             text: "Queue empty"
                             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
                             color: Kirigami.Theme.disabledTextColor || "#888888"
+                        }
+                    }
+
+                    // ── Lyrics panel (shown when tab = "lyrics") ─────────────
+                    Item {
+                        id: lyricsPanel
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        visible: tabQueueBtn.parent.activeTab === "lyrics"
+                        clip: true
+
+                        // Parse lyrics JSON reactively.
+                        property var lyricsData: {
+                            var s = player.lyrics_json
+                            if (!s || s.length === 0) return { synced: false, lines: [] }
+                            try { return JSON.parse(s) } catch(e) { return { synced: false, lines: [] } }
+                        }
+
+                        property bool hasLines: lyricsData && lyricsData.lines && lyricsData.lines.length > 0
+
+                        // Active line index for synced lyrics: last line with t <= position_secs.
+                        property int activeLineIndex: {
+                            if (!lyricsData || !lyricsData.synced || !lyricsData.lines) return -1
+                            var lines = lyricsData.lines
+                            var pos = player.position_secs
+                            var best = -1
+                            for (var i = 0; i < lines.length; i++) {
+                                var t = lines[i].t
+                                if (t !== null && t !== undefined && t <= pos) best = i
+                            }
+                            return best
+                        }
+
+                        // Scroll synced list to keep the active line visible.
+                        onActiveLineIndexChanged: {
+                            if (activeLineIndex >= 0 && lyricsData && lyricsData.synced) {
+                                syncedLyricsList.positionViewAtIndex(activeLineIndex, ListView.Center)
+                            }
+                        }
+
+                        // ── Empty state ───────────────────────────────────────
+                        Controls.Label {
+                            anchors.centerIn: parent
+                            visible: !lyricsPanel.hasLines
+                            text: "No lyrics"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                            color: Kirigami.Theme.disabledTextColor || "#888888"
+                        }
+
+                        // ── Synced lyrics (scrolling ListView) ────────────────
+                        ListView {
+                            id: syncedLyricsList
+                            anchors.fill: parent
+                            visible: lyricsPanel.hasLines && lyricsPanel.lyricsData && lyricsPanel.lyricsData.synced
+                            model: (lyricsPanel.lyricsData && lyricsPanel.lyricsData.synced)
+                                   ? lyricsPanel.lyricsData.lines
+                                   : []
+                            clip: true
+
+                            Controls.ScrollBar.vertical: Controls.ScrollBar {
+                                policy: Controls.ScrollBar.AsNeeded
+                            }
+
+                            delegate: Item {
+                                width: syncedLyricsList.width
+                                height: lyricLineLabel.implicitHeight + 14
+
+                                property bool isActive: index === lyricsPanel.activeLineIndex
+
+                                Controls.Label {
+                                    id: lyricLineLabel
+                                    anchors.left: parent.left
+                                    anchors.right: parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.leftMargin: 4
+                                    anchors.rightMargin: 4
+                                    text: (modelData && modelData.text) ? modelData.text : ""
+                                    wrapMode: Text.WordWrap
+                                    font.pointSize: parent.isActive
+                                                    ? Kirigami.Theme.defaultFont.pointSize * 0.95
+                                                    : Kirigami.Theme.defaultFont.pointSize * 0.85
+                                    font.bold: parent.isActive
+                                    color: parent.isActive
+                                           ? (Kirigami.Theme.highlightColor || "#3daee9")
+                                           : (Kirigami.Theme.textColor || "#000000")
+                                    opacity: parent.isActive ? 1.0 : 0.55
+
+                                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                                    Behavior on font.pointSize { NumberAnimation { duration: 120 } }
+                                }
+                            }
+                        }
+
+                        // ── Unsynced lyrics (plain scrollable text) ───────────
+                        Flickable {
+                            id: unsyncedFlickable
+                            anchors.fill: parent
+                            visible: lyricsPanel.hasLines && lyricsPanel.lyricsData && !lyricsPanel.lyricsData.synced
+                            contentWidth: width
+                            contentHeight: unsyncedText.implicitHeight + Kirigami.Units.largeSpacing
+                            clip: true
+
+                            Controls.ScrollBar.vertical: Controls.ScrollBar {
+                                policy: Controls.ScrollBar.AsNeeded
+                            }
+
+                            Controls.Label {
+                                id: unsyncedText
+                                width: unsyncedFlickable.width
+                                text: {
+                                    if (!lyricsPanel.lyricsData || !lyricsPanel.lyricsData.lines) return ""
+                                    var lines = lyricsPanel.lyricsData.lines
+                                    var parts = []
+                                    for (var i = 0; i < lines.length; i++) {
+                                        if (lines[i] && lines[i].text) parts.push(lines[i].text)
+                                    }
+                                    return parts.join("\n")
+                                }
+                                wrapMode: Text.WordWrap
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                                color: Kirigami.Theme.textColor || "#000000"
+                                topPadding: 4
+                                leftPadding: 4
+                                rightPadding: 4
+                            }
                         }
                     }
                 }

@@ -1676,6 +1676,8 @@ name = "lyra-metadata"
 version = "0.0.0"
 dependencies = [
  "lofty",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror 2.0.18",
 ]
@@ -1701,6 +1703,7 @@ dependencies = [
  "lyra-db",
  "lyra-engine",
  "lyra-library",
+ "lyra-metadata",
  "mpris-server",
  "serde_json",
 ]
