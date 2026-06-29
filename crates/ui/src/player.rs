@@ -40,6 +40,8 @@ pub mod qobject {
         #[qproperty(QString, eq_bands_json)]
         /// Whether bit-perfect mode is active.
         #[qproperty(bool, bit_perfect)]
+        /// Crossfade duration in seconds (0.0 = off, max 12 s).
+        #[qproperty(f64, crossfade_secs)]
         type Player = super::PlayerRust;
 
         /// Initialise the MPRIS2 D-Bus server.  Call once from QML
@@ -133,6 +135,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setBitPerfect"]
         fn set_bit_perfect_invokable(self: Pin<&mut Player>, enabled: bool);
+
+        /// Set the crossfade duration in seconds (0.0 = off, clamped to 0..12 s).
+        #[qinvokable]
+        #[cxx_name = "setCrossfade"]
+        fn set_crossfade_invokable(self: Pin<&mut Player>, secs: f64);
 
         /// Return the 24 spectrum band levels (0.0..=1.0) as a JSON array.
         /// Poll this from QML (e.g. every 33 ms) to drive the spectrum visualizer.
@@ -230,6 +237,9 @@ pub struct PlayerRust {
     /// Whether bit-perfect mode is active.
     bit_perfect: bool,
 
+    /// Crossfade duration in seconds (0.0 = off).  Persisted across tracks.
+    crossfade_secs: f64,
+
     /// Persisted EQ gains (applied to the engine when it's lazily created).
     eq_gains: [f32; 10],
 }
@@ -258,6 +268,7 @@ impl Default for PlayerRust {
             eq_enabled: false,
             eq_bands_json: QString::from(build_eq_bands_json(&default_gains).as_str()),
             bit_perfect: false,
+            crossfade_secs: 0.0,
             eq_gains: default_gains,
         }
     }
@@ -381,6 +392,7 @@ impl qobject::Player {
                         e.set_eq_gain(i, gain);
                     }
                     e.set_bit_perfect(r.bit_perfect);
+                    e.set_crossfade_secs(r.crossfade_secs as f32);
                     r.engine = Some(e);
                 }
                 Err(e) => {
@@ -404,6 +416,10 @@ impl qobject::Player {
     }
 
     /// Internal: play a path string, update title/artist/cover/state/duration properties.
+    ///
+    /// `next_path` — if `Some`, informs the engine of the next track so the
+    /// crossfade mixer can pre-open it when needed.  Pass `None` when the next
+    /// track is unknown (e.g. direct `play()` invokable).
     fn play_row(
         mut self: Pin<&mut Self>,
         path: &str,
@@ -411,6 +427,7 @@ impl qobject::Player {
         artist: &str,
         cover_thumb: &str,
         duration_ms: u64,
+        next_path: Option<&str>,
     ) {
         if !self.as_mut().ensure_engine() {
             return;
@@ -424,6 +441,15 @@ impl qobject::Player {
 
         match play_result {
             Some(Ok(())) => {
+                // Inform the engine of the next track for crossfade preparation.
+                {
+                    let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                    if let Some(e) = r.engine.as_ref() {
+                        e.set_next_track_path(
+                            next_path.map(std::path::Path::new)
+                        );
+                    }
+                }
                 self.as_mut().set_current_title(QString::from(title));
                 self.as_mut().set_current_artist(QString::from(artist));
                 self.as_mut().set_current_cover_thumb(QString::from(cover_thumb));
@@ -451,8 +477,8 @@ impl qobject::Player {
         let path_s = path.to_string();
         let title_s = title.to_string();
         let artist_s = artist.to_string();
-        // Duration unknown when playing via the direct `play()` invokable.
-        self.as_mut().play_row(&path_s, &title_s, &artist_s, "", 0);
+        // Duration and next track unknown when using the direct `play()` invokable.
+        self.as_mut().play_row(&path_s, &title_s, &artist_s, "", 0, None);
     }
 
     fn play_from_list(mut self: Pin<&mut Self>, results_json: QString, index: i32) {
@@ -487,6 +513,13 @@ impl qobject::Player {
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
 
+        // Resolve the next track path for crossfade pre-loading.
+        let next_row_path: Option<String> = if idx + 1 < playlist.len() {
+            Some(playlist[idx + 1].path.clone())
+        } else {
+            None
+        };
+
         let (path, title, artist, cover, dur_ms) = (
             row.path.clone(),
             row.title.clone(),
@@ -494,7 +527,14 @@ impl qobject::Player {
             row.cover_thumb.clone(),
             row.duration_ms,
         );
-        self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
+        self.as_mut().play_row(
+            &path,
+            &title,
+            &artist,
+            &cover,
+            dur_ms,
+            next_row_path.as_deref(),
+        );
     }
 
     pub fn next(mut self: Pin<&mut Self>) {
@@ -511,12 +551,16 @@ impl qobject::Player {
         };
 
         // Resolve id → row from cached playlist.
-        let (path, title, artist, cover, dur_ms, queue_json) = {
+        let (path, title, artist, cover, dur_ms, queue_json, next_path) = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             let playlist = &r.playlist;
             let Some(row) = find_row(playlist, id) else {
                 return;
             };
+            let pos = playlist.iter().position(|r| r.id == id);
+            let next_p = pos
+                .and_then(|i| playlist.get(i + 1))
+                .map(|r| r.path.clone());
             let qj = build_queue_json(playlist, Some(id));
             (
                 row.path.clone(),
@@ -525,12 +569,20 @@ impl qobject::Player {
                 row.cover_thumb.clone(),
                 row.duration_ms,
                 qj,
+                next_p,
             )
         };
 
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
-        self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
+        self.as_mut().play_row(
+            &path,
+            &title,
+            &artist,
+            &cover,
+            dur_ms,
+            next_path.as_deref(),
+        );
     }
 
     pub fn prev(mut self: Pin<&mut Self>) {
@@ -547,12 +599,16 @@ impl qobject::Player {
         };
 
         // Resolve id → row from cached playlist.
-        let (path, title, artist, cover, dur_ms, queue_json) = {
+        let (path, title, artist, cover, dur_ms, queue_json, next_path) = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             let playlist = &r.playlist;
             let Some(row) = find_row(playlist, id) else {
                 return;
             };
+            let pos = playlist.iter().position(|r| r.id == id);
+            let next_p = pos
+                .and_then(|i| playlist.get(i + 1))
+                .map(|r| r.path.clone());
             let qj = build_queue_json(playlist, Some(id));
             (
                 row.path.clone(),
@@ -561,12 +617,20 @@ impl qobject::Player {
                 row.cover_thumb.clone(),
                 row.duration_ms,
                 qj,
+                next_p,
             )
         };
 
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
-        self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
+        self.as_mut().play_row(
+            &path,
+            &title,
+            &artist,
+            &cover,
+            dur_ms,
+            next_path.as_deref(),
+        );
     }
 
     pub fn pause(mut self: Pin<&mut Self>) {
@@ -769,6 +833,18 @@ impl qobject::Player {
             }
         }
         self.as_mut().set_bit_perfect(enabled);
+    }
+
+    fn set_crossfade_invokable(mut self: Pin<&mut Self>, secs: f64) {
+        let clamped = secs.clamp(0.0, 12.0);
+        {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.crossfade_secs = clamped;
+            if let Some(e) = r.engine.as_ref() {
+                e.set_crossfade_secs(clamped as f32);
+            }
+        }
+        self.as_mut().set_crossfade_secs(clamped);
     }
 
     fn spectrum_levels(self: Pin<&mut Self>) -> QString {

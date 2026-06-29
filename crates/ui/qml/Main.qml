@@ -1959,6 +1959,93 @@ Kirigami.ApplicationWindow {
                                             }
                                         }
                                     }
+
+                                    // Crossfade card
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        Layout.topMargin: 10
+                                        implicitHeight: crossfadeCardContent.implicitHeight + 24
+                                        radius: 12
+                                        color: Qt.rgba(1, 1, 1, 0.04)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: parent.radius
+                                            color: "transparent"
+                                            border.color: player.crossfade_secs > 0
+                                                          ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.35)
+                                                          : Qt.rgba(1, 1, 1, 0.07)
+                                            border.width: 1
+
+                                            Behavior on border.color { ColorAnimation { duration: 200 } }
+                                        }
+
+                                        ColumnLayout {
+                                            id: crossfadeCardContent
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.margins: 16
+                                            spacing: 10
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 8
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 4
+
+                                                    Controls.Label {
+                                                        text: "Crossfade"
+                                                        font.bold: true
+                                                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
+                                                        color: root.textPrimary
+                                                    }
+
+                                                    Controls.Label {
+                                                        Layout.fillWidth: true
+                                                        text: player.crossfade_secs > 0
+                                                              ? ("Blend tracks over " + player.crossfade_secs.toFixed(1) + " s using equal-power curves.")
+                                                              : "Off — tracks play back-to-back with no overlap."
+                                                        color: root.textDim
+                                                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                                        wrapMode: Text.WordWrap
+                                                    }
+                                                }
+
+                                                Controls.Label {
+                                                    text: player.crossfade_secs > 0
+                                                          ? (player.crossfade_secs.toFixed(1) + " s")
+                                                          : "Off"
+                                                    color: player.crossfade_secs > 0 ? root.accentColor : root.textDim
+                                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                                                    font.bold: player.crossfade_secs > 0
+
+                                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                                }
+                                            }
+
+                                            Controls.Slider {
+                                                id: crossfadeSlider
+                                                Layout.fillWidth: true
+                                                from: 0.0
+                                                to: 12.0
+                                                stepSize: 0.5
+                                                value: player.crossfade_secs
+
+                                                onMoved: player.setCrossfade(value)
+
+                                                Controls.ToolTip {
+                                                    parent: crossfadeSlider.handle
+                                                    visible: crossfadeSlider.pressed
+                                                    text: crossfadeSlider.value > 0
+                                                          ? (crossfadeSlider.value.toFixed(1) + " s")
+                                                          : "Off"
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
 
