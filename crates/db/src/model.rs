@@ -52,6 +52,15 @@ pub struct Playlist {
     pub track_count: i64,
 }
 
+/// A smart playlist row (name + rules stored as JSON).
+#[derive(Debug, Clone)]
+pub struct SmartPlaylist {
+    pub id:        i64,
+    pub name:      String,
+    pub rules_json: String,
+    pub match_all:  bool,
+}
+
 /// A track row as read from the database.
 #[derive(Debug, Clone)]
 pub struct Track {

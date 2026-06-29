@@ -53,5 +53,15 @@ pub fn migrations() -> Migrations<'static> {
         );
         "#,
         ),
+        M::up(
+            r#"
+        CREATE TABLE smart_playlists (
+            id         INTEGER PRIMARY KEY,
+            name       TEXT    NOT NULL,
+            rules_json TEXT    NOT NULL,
+            match_all  INTEGER NOT NULL DEFAULT 1
+        );
+        "#,
+        ),
     ])
 }

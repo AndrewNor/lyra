@@ -3,7 +3,7 @@ mod schema;
 pub mod model;
 pub mod queries;
 
-pub use model::{Album, Artist, Genre, NewTrack, Playlist, Track};
+pub use model::{Album, Artist, Genre, NewTrack, Playlist, SmartPlaylist, Track};
 
 use std::path::Path;
 

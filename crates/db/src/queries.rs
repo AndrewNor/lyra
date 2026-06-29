@@ -1,6 +1,6 @@
 //! Database query implementations.
 
-use crate::{model::{Album, Artist, Genre, NewTrack, Playlist, Track}, Db, Result};
+use crate::{model::{Album, Artist, Genre, NewTrack, Playlist, SmartPlaylist, Track}, Db, Result};
 
 const SELECT_TRACK: &str = "SELECT t.id, t.path, t.title, ar.name, al.title, t.track_no, t.duration_ms, t.cover_thumb \
     FROM tracks t LEFT JOIN artists ar ON ar.id=t.artist_id LEFT JOIN albums al ON al.id=t.album_id";
@@ -308,6 +308,139 @@ impl Db {
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map([limit], row_to_track)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ── Smart Playlist queries ────────────────────────────────────────────────
+
+    /// Create a new smart playlist and return its id.
+    pub fn create_smart_playlist(
+        &mut self,
+        name: &str,
+        rules_json: &str,
+        match_all: bool,
+    ) -> Result<i64> {
+        self.conn.execute(
+            "INSERT INTO smart_playlists(name, rules_json, match_all) VALUES (?1, ?2, ?3)",
+            rusqlite::params![name, rules_json, match_all as i64],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Delete a smart playlist by id.
+    pub fn delete_smart_playlist(&mut self, id: i64) -> Result<()> {
+        self.conn.execute("DELETE FROM smart_playlists WHERE id = ?1", [id])?;
+        Ok(())
+    }
+
+    /// List all smart playlists, ordered by name.
+    pub fn list_smart_playlists(&self) -> Result<Vec<SmartPlaylist>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, rules_json, match_all FROM smart_playlists ORDER BY name",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(SmartPlaylist {
+                id:         r.get(0)?,
+                name:       r.get(1)?,
+                rules_json: r.get(2)?,
+                match_all:  r.get::<_, i64>(3)? != 0,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Evaluate a smart playlist's rules and return matching tracks (ORDER BY title).
+    ///
+    /// Rules are parsed from the stored `rules_json` column.  Each rule is
+    /// `{ "field": "...", "op": "...", "value": "..." }`.  Unknown fields or
+    /// operators are silently skipped (so the rule contributes nothing to the
+    /// WHERE clause).  All parameters are bound — never interpolated — ensuring
+    /// injection safety even when the value contains quotes or wildcards.
+    pub fn smart_playlist_tracks(&self, id: i64) -> Result<Vec<Track>> {
+        // Load the smart playlist row.
+        let row = self.conn.query_row(
+            "SELECT rules_json, match_all FROM smart_playlists WHERE id = ?1",
+            [id],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+        )?;
+        let (rules_json, match_all_int) = row;
+        let match_all = match_all_int != 0;
+
+        // Parse rules.
+        let rules: Vec<serde_json::Value> =
+            serde_json::from_str(&rules_json).unwrap_or_default();
+
+        // Build WHERE fragments and collect bound parameter values.
+        let mut fragments: Vec<String> = Vec::new();
+        let mut params: Vec<String> = Vec::new();
+
+        for rule in &rules {
+            let field = rule.get("field").and_then(|v| v.as_str()).unwrap_or("");
+            let op    = rule.get("op").and_then(|v| v.as_str()).unwrap_or("");
+            let value = rule.get("value").and_then(|v| v.as_str()).unwrap_or("");
+
+            // Map logical field name → SQL column expression.
+            let col = match field {
+                "title"  => "t.title",
+                "artist" => "ar.name",
+                "album"  => "al.title",
+                "genre"  => "t.genre",
+                "year"   => "CAST(al.year AS INTEGER)",
+                _        => continue, // unknown field — skip
+            };
+
+            let (fragment, bound_value) = match op {
+                "contains" => {
+                    // Case-insensitive LIKE: LOWER(col) LIKE '%' || lower(?) || '%'
+                    (
+                        format!("LOWER({col}) LIKE '%' || LOWER(?{}) || '%'", params.len() + 1),
+                        value.to_owned(),
+                    )
+                }
+                "is" => {
+                    (
+                        format!("{col} = ?{}", params.len() + 1),
+                        value.to_owned(),
+                    )
+                }
+                "gt" => {
+                    (
+                        format!("{col} > ?{}", params.len() + 1),
+                        value.to_owned(),
+                    )
+                }
+                "lt" => {
+                    (
+                        format!("{col} < ?{}", params.len() + 1),
+                        value.to_owned(),
+                    )
+                }
+                _ => continue, // unknown op — skip
+            };
+
+            fragments.push(fragment);
+            params.push(bound_value);
+        }
+
+        // If no valid rules remain, return all tracks.
+        let where_clause = if fragments.is_empty() {
+            String::new()
+        } else {
+            let joiner = if match_all { " AND " } else { " OR " };
+            format!(" WHERE {}", fragments.join(joiner))
+        };
+
+        let sql = format!("{SELECT_TRACK}{where_clause} ORDER BY t.title");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rusqlite_params: Vec<rusqlite::types::Value> = params
+            .into_iter()
+            .map(rusqlite::types::Value::Text)
+            .collect();
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(rusqlite_params.iter()),
+            row_to_track,
+        )?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 }
@@ -647,5 +780,204 @@ mod tests {
 
         let recent = db.recently_added(2).unwrap();
         assert_eq!(recent.len(), 2, "limit must be respected");
+    }
+
+    // ── Smart Playlist tests ───────────────────────────────────────────────────
+
+    /// Seed tracks suitable for smart playlist testing: various genres and years.
+    fn seed_smart_tracks(db: &mut Db) {
+        // Rock tracks
+        let mut r1 = NewTrack {
+            path: "/sp/rock1.flac".into(), title: "Rock Anthem".into(),
+            artist: Some("Band A".into()), album: Some("Rock Album".into()),
+            album_artist: Some("Band A".into()), track_no: Some(1), disc_no: Some(1),
+            year: Some(2015), duration_ms: Some(200_000), mtime: 1,
+            cover_thumb: None, genre: Some("Rock".into()),
+        };
+        let r2 = NewTrack {
+            path: "/sp/rock2.flac".into(), title: "Stone Cold".into(),
+            artist: Some("Band A".into()), album: Some("Rock Album".into()),
+            album_artist: Some("Band A".into()), track_no: Some(2), disc_no: Some(1),
+            year: Some(2015), duration_ms: Some(210_000), mtime: 2,
+            cover_thumb: None, genre: Some("Rock".into()),
+        };
+        // Jazz track
+        let j1 = NewTrack {
+            path: "/sp/jazz1.flac".into(), title: "Blue Note".into(),
+            artist: Some("Jazz Cat".into()), album: Some("Cool Jazz".into()),
+            album_artist: Some("Jazz Cat".into()), track_no: Some(1), disc_no: Some(1),
+            year: Some(1998), duration_ms: Some(320_000), mtime: 3,
+            cover_thumb: None, genre: Some("Jazz".into()),
+        };
+        // Electronic track — newer year
+        let e1 = NewTrack {
+            path: "/sp/elec1.flac".into(), title: "Pulse Wave".into(),
+            artist: Some("Synth Mind".into()), album: Some("Circuits".into()),
+            album_artist: Some("Synth Mind".into()), track_no: Some(1), disc_no: Some(1),
+            year: Some(2022), duration_ms: Some(240_000), mtime: 4,
+            cover_thumb: None, genre: Some("Electronic".into()),
+        };
+        r1.year = Some(2015);
+        db.upsert_track(&r1).unwrap();
+        db.upsert_track(&r2).unwrap();
+        db.upsert_track(&j1).unwrap();
+        db.upsert_track(&e1).unwrap();
+    }
+
+    #[test]
+    fn smart_playlist_genre_is_rule() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        let rules = r#"[{"field":"genre","op":"is","value":"Rock"}]"#;
+        let id = db.create_smart_playlist("Rock Only", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 2, "should return 2 Rock tracks");
+        assert!(tracks.iter().all(|t| t.title == "Rock Anthem" || t.title == "Stone Cold"),
+            "unexpected track in Rock-only playlist");
+    }
+
+    #[test]
+    fn smart_playlist_title_contains_rule() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        let rules = r#"[{"field":"title","op":"contains","value":"stone"}]"#;
+        let id = db.create_smart_playlist("Stone Tracks", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Stone Cold");
+    }
+
+    #[test]
+    fn smart_playlist_year_gt_rule() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // year > 2015 should return only "Pulse Wave" (2022)
+        let rules = r#"[{"field":"year","op":"gt","value":"2015"}]"#;
+        let id = db.create_smart_playlist("Recent", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 1, "only 2022 track exceeds 2015");
+        assert_eq!(tracks[0].title, "Pulse Wave");
+    }
+
+    #[test]
+    fn smart_playlist_multi_rule_all() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // genre is Rock AND artist contains "Band" → both Rock tracks
+        let rules = r#"[{"field":"genre","op":"is","value":"Rock"},{"field":"artist","op":"contains","value":"Band"}]"#;
+        let id = db.create_smart_playlist("Rock by Band", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 2);
+    }
+
+    #[test]
+    fn smart_playlist_multi_rule_any() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // genre is Rock OR genre is Jazz → 3 tracks
+        let rules = r#"[{"field":"genre","op":"is","value":"Rock"},{"field":"genre","op":"is","value":"Jazz"}]"#;
+        let id = db.create_smart_playlist("Rock or Jazz", rules, false).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 3, "2 Rock + 1 Jazz = 3");
+    }
+
+    #[test]
+    fn smart_playlist_artist_contains_case_insensitive() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // "synth" (lowercase) should match "Synth Mind"
+        let rules = r#"[{"field":"artist","op":"contains","value":"synth"}]"#;
+        let id = db.create_smart_playlist("Synth Artists", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Pulse Wave");
+    }
+
+    #[test]
+    fn smart_playlist_injection_safety() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // A value with SQL metacharacters must not break the query or return extra rows.
+        let evil = r#"Rock' OR '1'='1"#;
+        let rules = serde_json::json!([{"field":"genre","op":"is","value": evil}]).to_string();
+        let id = db.create_smart_playlist("Injection Test", &rules, true).unwrap();
+
+        // Should return no results (no track has that exact genre string).
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 0, "injection must not return extra rows");
+    }
+
+    #[test]
+    fn smart_playlist_unknown_field_skipped() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // An unknown field is silently skipped → empty WHERE → all tracks returned.
+        let rules = r#"[{"field":"unknownfield","op":"is","value":"anything"}]"#;
+        let id = db.create_smart_playlist("No Filter", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 4, "no valid rules → all tracks returned");
+    }
+
+    #[test]
+    fn smart_playlist_list_and_delete() {
+        let mut db = Db::open_in_memory().unwrap();
+
+        let id1 = db.create_smart_playlist("Zz Last", r#"[]"#, true).unwrap();
+        let id2 = db.create_smart_playlist("Aa First", r#"[]"#, false).unwrap();
+
+        let list = db.list_smart_playlists().unwrap();
+        assert_eq!(list.len(), 2);
+        // Ordered by name: Aa First, Zz Last
+        assert_eq!(list[0].name, "Aa First");
+        assert!(!list[0].match_all);
+        assert_eq!(list[1].name, "Zz Last");
+        assert!(list[1].match_all);
+
+        db.delete_smart_playlist(id1).unwrap();
+        let list2 = db.list_smart_playlists().unwrap();
+        assert_eq!(list2.len(), 1);
+        assert_eq!(list2[0].id, id2);
+    }
+
+    #[test]
+    fn smart_playlist_album_contains_rule() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        let rules = r#"[{"field":"album","op":"contains","value":"jazz"}]"#;
+        let id = db.create_smart_playlist("Jazz Albums", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Blue Note");
+    }
+
+    #[test]
+    fn smart_playlist_year_lt_rule() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_smart_tracks(&mut db);
+
+        // year < 2015 should return only "Blue Note" (1998)
+        let rules = r#"[{"field":"year","op":"lt","value":"2015"}]"#;
+        let id = db.create_smart_playlist("Old Tracks", rules, true).unwrap();
+
+        let tracks = db.smart_playlist_tracks(id).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].title, "Blue Note");
     }
 }
