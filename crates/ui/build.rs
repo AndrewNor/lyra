@@ -11,6 +11,7 @@ fn main() {
                 "qml/TrackDelegate.qml",
                 "qml/AlbumCard.qml",
                 "qml/ArtistRow.qml",
+                "qml/GenreRow.qml",
             ]),
     )
     .file("src/bridge.rs")
