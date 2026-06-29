@@ -290,6 +290,15 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// Returns the cover_thumb path for the track at `path`, if any.
+    pub fn cover_thumb_for_path(&self, path: &str) -> Option<String> {
+        self.conn.query_row(
+            "SELECT cover_thumb FROM tracks WHERE path = ?1",
+            [path],
+            |row| row.get::<_, Option<String>>(0),
+        ).unwrap_or(None)
+    }
+
     /// Returns the most recently added tracks (newest first by row id).
     pub fn recently_added(&self, limit: i64) -> Result<Vec<Track>> {
         let sql = format!(

@@ -109,6 +109,19 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "loadRecentlyAdded"]
         fn load_recently_added(self: Pin<&mut Library>);
+
+        /// Write updated title/artist/album tags to the audio file at `path`,
+        /// refresh the DB row, and reload the current listing.
+        /// Errors are surfaced to status_text; never panics.
+        #[qinvokable]
+        #[cxx_name = "saveTrackTags"]
+        fn save_track_tags(
+            self: Pin<&mut Library>,
+            path: QString,
+            title: QString,
+            artist: QString,
+            album: QString,
+        );
     }
 
     impl cxx_qt::Threading for Library {}
@@ -117,7 +130,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use lyra_db::{Album, Artist, Db, Genre, Playlist, Track};
+use lyra_db::{Album, Artist, Db, Genre, NewTrack, Playlist, Track};
 
 use crate::paths::{art_cache_dir, library_db_path};
 
@@ -594,6 +607,104 @@ impl qobject::Library {
                 self.as_mut().set_status_text(QString::from(msg.as_str()));
             }
         }
+    }
+
+    fn save_track_tags(
+        mut self: Pin<&mut Self>,
+        path: QString,
+        title: QString,
+        artist: QString,
+        album: QString,
+    ) {
+        let path_str = path.to_string();
+        let title_str = title.to_string();
+        let artist_str = artist.to_string();
+        let album_str = album.to_string();
+
+        let file_path = std::path::Path::new(&path_str);
+
+        // Step 1: Read existing tags so we preserve fields we're not editing.
+        let mut existing = lyra_metadata::read_tags(file_path).unwrap_or_default();
+
+        // Override only the fields passed from QML.
+        if !title_str.is_empty() {
+            existing.title = Some(title_str.clone());
+        }
+        if !artist_str.is_empty() {
+            existing.artist = Some(artist_str.clone());
+        }
+        if !album_str.is_empty() {
+            existing.album = Some(album_str.clone());
+        }
+
+        // Step 2: Write tags back to file.
+        if let Err(e) = lyra_metadata::write_tags(file_path, &existing) {
+            let msg = format!("saveTrackTags write error: {e}");
+            self.as_mut().set_status_text(QString::from(msg.as_str()));
+            return;
+        }
+
+        // Step 3: Re-read the file to get authoritative duration / tags,
+        // then upsert the DB row to keep title/artist/album in sync.
+        let refreshed = match lyra_metadata::read_tags(file_path) {
+            Ok(t) => t,
+            Err(e) => {
+                let msg = format!("saveTrackTags re-read error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+                return;
+            }
+        };
+
+        // Step 3b: Prepare the updated row, preserving the existing cover_thumb.
+        let final_title = refreshed.title.clone().unwrap_or_else(|| title_str.clone());
+        let final_artist: Option<String> = refreshed.artist.clone().or_else(|| {
+            if artist_str.is_empty() { None } else { Some(artist_str.clone()) }
+        });
+        let final_album: Option<String> = refreshed.album.clone().or_else(|| {
+            if album_str.is_empty() { None } else { Some(album_str.clone()) }
+        });
+
+        let mtime = std::fs::metadata(file_path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+
+        // Read the current cover_thumb so upsert_track doesn't null it out.
+        let current_cover = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.db.cover_thumb_for_path(&path_str)
+        };
+
+        let new_track = NewTrack {
+            path: path_str.clone(),
+            title: final_title,
+            artist: final_artist,
+            album: final_album,
+            album_artist: refreshed.album_artist.clone(),
+            track_no: refreshed.track_no,
+            disc_no: refreshed.disc_no,
+            year: refreshed.year,
+            duration_ms: refreshed.duration_ms,
+            mtime,
+            cover_thumb: current_cover,
+            genre: refreshed.genre.clone(),
+        };
+
+        let upsert_result = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.db.upsert_track(&new_track)
+        };
+        if let Err(e) = upsert_result {
+            let msg = format!("saveTrackTags db error: {e}");
+            self.as_mut().set_status_text(QString::from(msg.as_str()));
+            return;
+        }
+
+        // Step 4: Reload the current listing so QML sees the updated metadata.
+        self.as_mut().load_all();
+        self.as_mut().set_status_text(QString::from("Tags saved"));
     }
 
     fn load_recently_added(mut self: Pin<&mut Self>) {

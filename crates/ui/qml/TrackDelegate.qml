@@ -23,6 +23,8 @@ Item {
     signal removeFromPlaylistRequested(int trackId, int playlistId)
     // Emitted when user picks "New playlist…" from the context menu
     signal newPlaylistRequested(int trackId)
+    // Emitted when user saves tag edits — parent handles the library call
+    signal saveTagsRequested(string path, string title, string artist, string album)
 
     height: 64
 
@@ -344,6 +346,20 @@ Item {
             }
         }
 
+        Controls.MenuSeparator {}
+
+        Controls.MenuItem {
+            text: "Edit tags…"
+            onTriggered: {
+                if (root.trackData) {
+                    editTitleField.text  = root.trackData.title  || ""
+                    editArtistField.text = root.trackData.artist || ""
+                    editAlbumField.text  = root.trackData.album  || ""
+                    editTagsDialog.open()
+                }
+            }
+        }
+
         Controls.MenuSeparator {
             visible: root.playlistsModel.length > 0
             height: visible ? implicitHeight : 0
@@ -359,6 +375,93 @@ Item {
                     if (root.trackData && modelData)
                         root.addToPlaylistRequested(root.trackData.id, modelData.id)
                 }
+            }
+        }
+    }
+
+    // ── Edit Tags dialog ──────────────────────────────────────────────────
+    Controls.Dialog {
+        id: editTagsDialog
+        title: "Edit Tags"
+        modal: true
+        anchors.centerIn: Controls.Overlay.overlay
+        standardButtons: Controls.Dialog.Save | Controls.Dialog.Cancel
+        padding: 20
+        spacing: 12
+
+        contentItem: Column {
+            spacing: 12
+            width: 340
+
+            Controls.Label {
+                text: "Title"
+                color: Qt.rgba(1, 1, 1, 0.60)
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+            }
+            Controls.TextField {
+                id: editTitleField
+                width: parent.width
+                placeholderText: "Title"
+                background: Rectangle {
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.07)
+                    border.color: editTitleField.activeFocus
+                                  ? (Kirigami.Theme.highlightColor || "#3daee9")
+                                  : Qt.rgba(1, 1, 1, 0.14)
+                    border.width: editTitleField.activeFocus ? 2 : 1
+                }
+                color: Qt.rgba(1, 1, 1, 0.92)
+            }
+
+            Controls.Label {
+                text: "Artist"
+                color: Qt.rgba(1, 1, 1, 0.60)
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+            }
+            Controls.TextField {
+                id: editArtistField
+                width: parent.width
+                placeholderText: "Artist"
+                background: Rectangle {
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.07)
+                    border.color: editArtistField.activeFocus
+                                  ? (Kirigami.Theme.highlightColor || "#3daee9")
+                                  : Qt.rgba(1, 1, 1, 0.14)
+                    border.width: editArtistField.activeFocus ? 2 : 1
+                }
+                color: Qt.rgba(1, 1, 1, 0.92)
+            }
+
+            Controls.Label {
+                text: "Album"
+                color: Qt.rgba(1, 1, 1, 0.60)
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+            }
+            Controls.TextField {
+                id: editAlbumField
+                width: parent.width
+                placeholderText: "Album"
+                background: Rectangle {
+                    radius: 5
+                    color: Qt.rgba(1, 1, 1, 0.07)
+                    border.color: editAlbumField.activeFocus
+                                  ? (Kirigami.Theme.highlightColor || "#3daee9")
+                                  : Qt.rgba(1, 1, 1, 0.14)
+                    border.width: editAlbumField.activeFocus ? 2 : 1
+                }
+                color: Qt.rgba(1, 1, 1, 0.92)
+            }
+        }
+
+        onAccepted: {
+            if (root.trackData && root.trackData.path) {
+                root.saveTagsRequested(
+                    root.trackData.path,
+                    editTitleField.text,
+                    editArtistField.text,
+                    editAlbumField.text
+                )
             }
         }
     }

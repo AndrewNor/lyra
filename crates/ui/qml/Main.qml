@@ -1149,6 +1149,9 @@ Kirigami.ApplicationWindow {
                                         newPlaylistField.text = ""
                                         newPlaylistDialog.open()
                                     }
+                                    onSaveTagsRequested: function(path, title, artist, album) {
+                                        library.saveTrackTags(path, title, artist, album)
+                                    }
                                 }
 
                                 // Empty / scanning placeholders
