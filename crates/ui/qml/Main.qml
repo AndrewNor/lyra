@@ -298,7 +298,7 @@ Kirigami.ApplicationWindow {
                 Layout.preferredWidth: 240
                 spacing: 4
 
-                // Live position bar (read-only — drag-to-seek is deferred)
+                // Live position / seek bar
                 RowLayout {
                     spacing: 6
 
@@ -309,28 +309,23 @@ Kirigami.ApplicationWindow {
                         color: Kirigami.Theme.disabledTextColor || "#888888"
                     }
 
-                    Item {
+                    Controls.Slider {
+                        id: seekBar
                         Layout.fillWidth: true
-                        height: seekBar.implicitHeight
+                        from: 0
+                        to: 1
+                        // Only update the slider position from the engine when
+                        // the user is not dragging — avoids a binding loop.
+                        value: (!seekBar.pressed && player.duration_secs > 0)
+                               ? (player.position_secs / player.duration_secs)
+                               : seekBar.value
+                        enabled: player.duration_secs > 0
 
-                        Controls.ProgressBar {
-                            id: seekBar
-                            anchors.fill: parent
-                            from: 0
-                            to: 1
-                            value: (player.duration_secs > 0)
-                                   ? (player.position_secs / player.duration_secs)
-                                   : 0
-                        }
-
-                        HoverHandler {
-                            id: progressHover
-                        }
-
-                        Controls.ToolTip {
-                            visible: progressHover.hovered
-                            text: "Drag-to-seek coming soon"
-                            delay: 400
+                        // Seek when the user releases the handle.
+                        onPressedChanged: {
+                            if (!pressed && player.duration_secs > 0) {
+                                player.seek(seekBar.value)
+                            }
                         }
                     }
 
