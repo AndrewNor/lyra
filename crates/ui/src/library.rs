@@ -45,7 +45,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use lyra_db::{Db, Track};
 
-use crate::paths::library_db_path;
+use crate::paths::{art_cache_dir, library_db_path};
 
 // ── Backing struct ───────────────────────────────────────────────────────────
 
@@ -118,6 +118,7 @@ pub(crate) fn tracks_to_json(tracks: &[Track]) -> String {
                 "album": t.album.as_deref().unwrap_or(""),
                 "path": t.path,
                 "durationMs": t.duration_ms.unwrap_or(0),
+                "cover_thumb": t.cover_thumb.as_deref().unwrap_or(""),
             })
         })
         .collect();
@@ -196,9 +197,10 @@ impl qobject::Library {
 
         std::thread::spawn(move || {
             // Open a SEPARATE db connection on the background thread.
+            let art = lyra_library::ArtCache::new(art_cache_dir());
             let summary_msg = match Db::open(&db_path) {
                 Err(e) => format!("Scan failed (db): {e}"),
-                Ok(mut bg_db) => match lyra_library::scan(&music_dir, &mut bg_db) {
+                Ok(mut bg_db) => match lyra_library::scan(&music_dir, &mut bg_db, &art) {
                     Ok(s) => format!(
                         "Scan done — {} added, {} updated, {} unchanged, {} failed",
                         s.added, s.updated, s.unchanged, s.failed

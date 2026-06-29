@@ -4,11 +4,14 @@ import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
 import ai.drivee.lyra
 
+// ── Layout-B: sidebar · content list · collapsible now-playing panel · transport ──
 Kirigami.ApplicationWindow {
     id: root
     title: "Lyra"
-    width: 800
-    height: 600
+    width: 1100
+    height: 700
+    minimumWidth: 700
+    minimumHeight: 480
 
     // ── QObject instances ────────────────────────────────────────────────────
     Library { id: library }
@@ -16,134 +19,757 @@ Kirigami.ApplicationWindow {
 
     Component.onCompleted: library.loadAll()
 
+    // ── State: right panel visibility ────────────────────────────────────────
+    property bool nowPlayingVisible: true
+
     // ── Parsed track list — re-evaluated whenever results_json changes ───────
-    // cxx-qt exposes properties in snake_case; use library.results_json (not camelCase).
-    // Guard against undefined (during construction) or empty/invalid JSON.
     property var tracks: {
         var s = library.results_json
         if (!s || s.length === 0) return []
         try { return JSON.parse(s) } catch(e) { return [] }
     }
 
-    // ── Footer transport bar ─────────────────────────────────────────────────
-    footer: Controls.ToolBar {
+    // ── Parsed queue — re-evaluated whenever queue_json changes ─────────────
+    property var queueTracks: {
+        var s = player.queue_json
+        if (!s || s.length === 0) return []
+        try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    // ── Top header ───────────────────────────────────────────────────────────
+    header: Controls.ToolBar {
+        id: topBar
+        height: 48
+
+        background: Rectangle {
+            color: Kirigami.Theme.backgroundColor || "#ffffff"
+            Rectangle {
+                anchors.bottom: parent.bottom
+                width: parent.width
+                height: 1
+                color: Kirigami.Theme.separatorColor || "#d0d0d0"
+            }
+        }
+
         RowLayout {
             anchors.fill: parent
-            anchors.leftMargin: Kirigami.Units.smallSpacing
-            anchors.rightMargin: Kirigami.Units.smallSpacing
+            anchors.leftMargin: Kirigami.Units.largeSpacing
+            anchors.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.largeSpacing
 
             Controls.Label {
-                Layout.fillWidth: true
-                elide: Text.ElideRight
-                text: {
-                    var t = player.current_title || ""
-                    var a = player.current_artist || ""
-                    if (t.length === 0 && a.length === 0) return "(nothing playing)"
-                    if (t.length === 0) return a
-                    if (a.length === 0) return t
-                    return t + " — " + a
+                text: "Lyra"
+                font.bold: true
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.15
+                color: Kirigami.Theme.textColor || "#000000"
+            }
+
+            Rectangle {
+                width: 1
+                height: 20
+                color: Kirigami.Theme.separatorColor || "#d0d0d0"
+            }
+
+            Kirigami.SearchField {
+                id: searchField
+                Layout.preferredWidth: 260
+                placeholderText: "Search tracks…"
+                onAccepted: {
+                    if (text.trim().length === 0)
+                        library.loadAll()
+                    else
+                        library.search(text)
                 }
             }
 
+            Item { Layout.fillWidth: true }
+
             Controls.Label {
-                text: player.state_text || "Stopped"
-                color: Kirigami.Theme.disabledTextColor
+                text: (library.track_count || 0) + " tracks"
+                color: Kirigami.Theme.disabledTextColor || "#888888"
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
             }
 
-            Controls.Button {
-                text: "Pause"
-                onClicked: player.pause()
+            Controls.Label {
+                text: library.status_text || ""
+                color: Kirigami.Theme.disabledTextColor || "#888888"
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+                elide: Text.ElideRight
+                Layout.maximumWidth: 200
+                visible: text.length > 0
             }
-            Controls.Button {
-                text: "Resume"
-                onClicked: player.resume()
+
+            Rectangle {
+                width: 1
+                height: 20
+                color: Kirigami.Theme.separatorColor || "#d0d0d0"
             }
-            Controls.Button {
-                text: "Stop"
-                onClicked: player.stop()
+
+            Controls.ToolButton {
+                text: (library.scanning || false) ? "Scanning…" : "Scan"
+                icon.name: "view-refresh"
+                enabled: !(library.scanning || false)
+                onClicked: library.scan()
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.text: "Scan ~/Music for new tracks"
+                Controls.ToolTip.delay: 600
+            }
+
+            Controls.ToolButton {
+                icon.name: root.nowPlayingVisible ? "sidebar-collapse-right" : "sidebar-expand-right"
+                onClicked: root.nowPlayingVisible = !root.nowPlayingVisible
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.text: root.nowPlayingVisible ? "Hide Now Playing panel" : "Show Now Playing panel"
+                Controls.ToolTip.delay: 600
             }
         }
     }
 
-    // ── Main page ────────────────────────────────────────────────────────────
-    pageStack.initialPage: Kirigami.ScrollablePage {
-        id: mainPage
-        title: "Library"
+    // ── Bottom transport bar ─────────────────────────────────────────────────
+    footer: Controls.ToolBar {
+        id: transportBar
+        height: 72
 
-        // Scan action shown in the page toolbar
-        actions: [
-            Kirigami.Action {
-                text: (library.scanning || false) ? "Scanning…" : "Scan"
-                icon.name: "view-refresh"
-                enabled: !(library.scanning || false)
-                onTriggered: library.scan()
+        background: Rectangle {
+            color: Kirigami.Theme.backgroundColor || "#ffffff"
+            Rectangle {
+                anchors.top: parent.top
+                width: parent.width
+                height: 1
+                color: Kirigami.Theme.separatorColor || "#d0d0d0"
             }
-        ]
+        }
 
-        // ScrollablePage takes ONE flickable child (the ListView)
-        ListView {
-            id: trackList
-            model: root.tracks
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: Kirigami.Units.largeSpacing
+            anchors.rightMargin: Kirigami.Units.largeSpacing
+            spacing: Kirigami.Units.largeSpacing
 
-            // Inline header: search field + status line
-            header: ColumnLayout {
-                width: trackList.width
-                spacing: 0
+            // Current track info (left side)
+            RowLayout {
+                Layout.preferredWidth: 240
+                spacing: Kirigami.Units.smallSpacing
 
-                Kirigami.SearchField {
-                    Layout.fillWidth: true
-                    Layout.margins: Kirigami.Units.smallSpacing
-                    placeholderText: "Search tracks…"
-                    onAccepted: {
-                        if (text.length === 0) library.loadAll()
-                        else library.search(text)
+                Rectangle {
+                    width: 48
+                    height: 48
+                    radius: 4
+                    color: Kirigami.Theme.alternateBackgroundColor || "#f5f5f5"
+                    clip: true
+
+                    Image {
+                        id: transportCover
+                        anchors.fill: parent
+                        source: player.current_cover_thumb
+                                ? "file://" + player.current_cover_thumb
+                                : ""
+                        fillMode: Image.PreserveAspectCrop
+                        visible: status === Image.Ready
+                    }
+
+                    Kirigami.Icon {
+                        anchors.centerIn: parent
+                        source: "media-optical-audio"
+                        width: 24
+                        height: 24
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                        visible: !transportCover.visible
                     }
                 }
 
-                Controls.Label {
-                    Layout.fillWidth: true
-                    Layout.leftMargin: Kirigami.Units.smallSpacing
-                    Layout.rightMargin: Kirigami.Units.smallSpacing
-                    Layout.bottomMargin: Kirigami.Units.smallSpacing
-                    color: Kirigami.Theme.disabledTextColor
-                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
-                    text: (library.status_text || "") + "   ·   " + (library.track_count || 0) + " tracks"
-                }
-            }
-
-            headerPositioning: ListView.OverlayHeader
-
-            delegate: Controls.ItemDelegate {
-                width: trackList.width
-                contentItem: ColumnLayout {
+                ColumnLayout {
                     spacing: 2
+                    Layout.fillWidth: true
+
                     Controls.Label {
                         Layout.fillWidth: true
                         elide: Text.ElideRight
-                        text: (modelData.title && modelData.title.length > 0)
-                              ? modelData.title
-                              : "(untitled)"
+                        text: player.current_title || "(nothing playing)"
+                        font.bold: (player.current_title || "").length > 0
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
                     }
                     Controls.Label {
                         Layout.fillWidth: true
                         elide: Text.ElideRight
-                        color: Kirigami.Theme.disabledTextColor
+                        text: player.current_artist || ""
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
-                        text: modelData.artist || ""
+                        visible: text.length > 0
                     }
                 }
-                onClicked: player.play(
-                    modelData.path || "",
-                    modelData.title || "",
-                    modelData.artist || ""
-                )
             }
 
-            Kirigami.PlaceholderMessage {
-                anchors.centerIn: parent
-                visible: trackList.count === 0 && !(library.scanning || false)
-                text: "No tracks found"
-                explanation: "Click Scan to index your music library"
+            Item { Layout.fillWidth: true }
+
+            // Playback controls (center)
+            RowLayout {
+                spacing: 4
+
+                Controls.ToolButton {
+                    icon.name: "media-playlist-shuffle"
+                    opacity: 0.5
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: "Shuffle — coming soon"
+                    Controls.ToolTip.delay: 400
+                }
+
+                Controls.ToolButton {
+                    icon.name: "media-skip-backward"
+                    onClicked: player.prev()
+                    enabled: (player.state_text || "Stopped") !== "Stopped"
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: "Previous"
+                    Controls.ToolTip.delay: 400
+                }
+
+                Controls.RoundButton {
+                    width: 44
+                    height: 44
+                    icon.name: (player.state_text === "Playing")
+                               ? "media-playback-pause"
+                               : "media-playback-start"
+                    icon.width: 20
+                    icon.height: 20
+                    onClicked: {
+                        if (player.state_text === "Playing")
+                            player.pause()
+                        else
+                            player.resume()
+                    }
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: (player.state_text === "Playing") ? "Pause" : "Play"
+                    Controls.ToolTip.delay: 400
+                }
+
+                Controls.ToolButton {
+                    icon.name: "media-skip-forward"
+                    onClicked: player.next()
+                    enabled: (player.state_text || "Stopped") !== "Stopped"
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: "Next"
+                    Controls.ToolTip.delay: 400
+                }
+
+                Controls.ToolButton {
+                    icon.name: "media-playlist-repeat"
+                    opacity: 0.5
+                    Controls.ToolTip.visible: hovered
+                    Controls.ToolTip.text: "Repeat — coming soon"
+                    Controls.ToolTip.delay: 400
+                }
+            }
+
+            Item { Layout.fillWidth: true }
+
+            // Progress + volume (right side)
+            ColumnLayout {
+                Layout.preferredWidth: 240
+                spacing: 4
+
+                // Non-interactive progress placeholder
+                RowLayout {
+                    spacing: 6
+
+                    Controls.Label {
+                        text: "0:00"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.75
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                        height: 4
+
+                        Rectangle {
+                            anchors.fill: parent
+                            radius: 2
+                            color: Kirigami.Theme.alternateBackgroundColor || "#f5f5f5"
+                        }
+
+                        HoverHandler {
+                            id: progressHover
+                        }
+
+                        Controls.ToolTip {
+                            visible: progressHover.hovered
+                            text: "Seek — coming soon"
+                        }
+                    }
+
+                    Controls.Label {
+                        text: "—"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.75
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                    }
+                }
+
+                // Volume control (visual only)
+                RowLayout {
+                    spacing: 6
+
+                    Kirigami.Icon {
+                        source: "audio-volume-medium"
+                        width: 16
+                        height: 16
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                    }
+
+                    Controls.Slider {
+                        id: volumeSlider
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 100
+                        value: 80
+                        Controls.ToolTip.visible: hovered
+                        Controls.ToolTip.text: "Volume — visual only (engine API coming soon)"
+                        Controls.ToolTip.delay: 400
+                    }
+                }
+            }
+        }
+    }
+
+    // ── Main layout: sidebar + content + now-playing panel ──────────────────
+    // Use pageStack.initialPage with titleVisible:false and a custom layout.
+    pageStack.initialPage: Kirigami.Page {
+        id: mainPage
+        // Suppress the page's auto-generated toolbar (Kirigami 6 API)
+        globalToolBarStyle: Kirigami.ApplicationHeaderStyle.None
+        leftPadding: 0
+        rightPadding: 0
+        topPadding: 0
+        bottomPadding: 0
+
+        RowLayout {
+            anchors.fill: parent
+            spacing: 0
+
+            // ── Left sidebar ─────────────────────────────────────────────────
+            Rectangle {
+                id: sidebar
+                Layout.preferredWidth: 200
+                Layout.fillHeight: true
+                color: Kirigami.Theme.alternateBackgroundColor || "#f5f5f5"
+
+                Rectangle {
+                    anchors.right: parent.right
+                    width: 1
+                    height: parent.height
+                    color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.topMargin: Kirigami.Units.largeSpacing
+                    spacing: 0
+
+                    // Library section
+                    Controls.Label {
+                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                        Layout.bottomMargin: 4
+                        text: "Library"
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.8
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 0.5
+                    }
+
+                    SidebarItem {
+                        iconName: "audio-x-generic"
+                        label: "Songs"
+                        active: true
+                        onActivated: library.loadAll()
+                    }
+                    SidebarItem {
+                        iconName: "media-album-cover"
+                        label: "Albums"
+                        enabled: false
+                    }
+                    SidebarItem {
+                        iconName: "user-identity"
+                        label: "Artists"
+                        enabled: false
+                    }
+                    SidebarItem {
+                        iconName: "tag"
+                        label: "Genres"
+                        enabled: false
+                    }
+                    SidebarItem {
+                        iconName: "view-calendar-recent-events"
+                        label: "Recently Added"
+                        enabled: false
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Kirigami.Units.smallSpacing
+                        Layout.bottomMargin: Kirigami.Units.smallSpacing
+                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                        Layout.rightMargin: Kirigami.Units.largeSpacing
+                        height: 1
+                        color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                    }
+
+                    // Playlists section
+                    Controls.Label {
+                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                        Layout.bottomMargin: 4
+                        text: "Playlists"
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.8
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 0.5
+                    }
+
+                    SidebarItem {
+                        iconName: "view-media-playlist"
+                        label: "Favourites"
+                        enabled: false
+                    }
+                    SidebarItem {
+                        iconName: "view-media-playlist"
+                        label: "Mix 1"
+                        enabled: false
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.topMargin: Kirigami.Units.smallSpacing
+                        Layout.bottomMargin: Kirigami.Units.smallSpacing
+                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                        Layout.rightMargin: Kirigami.Units.largeSpacing
+                        height: 1
+                        color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                    }
+
+                    // Sources · soon
+                    Controls.Label {
+                        Layout.leftMargin: Kirigami.Units.largeSpacing
+                        Layout.bottomMargin: 4
+                        text: "Sources · soon"
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.8
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                        opacity: 0.6
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 0.5
+                    }
+
+                    SidebarItem {
+                        iconName: "podcast"
+                        label: "Podcasts"
+                        enabled: false
+                        opacity: 0.45
+                    }
+                    SidebarItem {
+                        iconName: "network-wireless"
+                        label: "Radio"
+                        enabled: false
+                        opacity: 0.45
+                    }
+                    SidebarItem {
+                        iconName: "internet-web-browser"
+                        label: "YouTube"
+                        enabled: false
+                        opacity: 0.45
+                    }
+
+                    Item { Layout.fillHeight: true }
+                }
+            }
+
+            // ── Main content: track list ──────────────────────────────────────
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                ListView {
+                    id: trackList
+                    anchors.fill: parent
+                    model: root.tracks
+                    clip: true
+                    reuseItems: true
+
+                    Controls.ScrollBar.vertical: Controls.ScrollBar {
+                        policy: Controls.ScrollBar.AsNeeded
+                    }
+
+                    header: Item {
+                        width: trackList.width
+                        height: 32
+
+                        Rectangle {
+                            anchors.fill: parent
+                            color: Kirigami.Theme.backgroundColor || "#ffffff"
+                        }
+
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: 6
+                            anchors.rightMargin: Kirigami.Units.largeSpacing
+                            spacing: 0
+
+                            Item { width: 52 }
+
+                            Controls.Label {
+                                Layout.fillWidth: true
+                                Layout.leftMargin: 10
+                                text: "Title / Artist"
+                                font.bold: true
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                color: Kirigami.Theme.disabledTextColor || "#888888"
+                                font.capitalization: Font.AllUppercase
+                                font.letterSpacing: 0.4
+                            }
+
+                            Controls.Label {
+                                Layout.preferredWidth: 50
+                                horizontalAlignment: Text.AlignRight
+                                text: "Time"
+                                font.bold: true
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                color: Kirigami.Theme.disabledTextColor || "#888888"
+                                font.capitalization: Font.AllUppercase
+                                font.letterSpacing: 0.4
+                            }
+                        }
+
+                        Rectangle {
+                            anchors.bottom: parent.bottom
+                            width: parent.width
+                            height: 1
+                            color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                        }
+                    }
+
+                    headerPositioning: ListView.OverlayHeader
+
+                    delegate: TrackDelegate {
+                        width: trackList.width
+                        trackData: modelData
+                        trackIndex: index
+                        isCurrentTrack: {
+                            var title = player.current_title || ""
+                            return title.length > 0
+                                   && modelData
+                                   && modelData.title === title
+                        }
+                        onTrackClicked: function(idx) {
+                            player.playFromList(library.results_json, idx)
+                        }
+                    }
+
+                    Kirigami.PlaceholderMessage {
+                        anchors.centerIn: parent
+                        visible: trackList.count === 0 && !(library.scanning || false)
+                        text: "No tracks found"
+                        explanation: "Click Scan to index your music library, or try a different search."
+                        icon.name: "audio-x-generic"
+                    }
+
+                    Kirigami.PlaceholderMessage {
+                        anchors.centerIn: parent
+                        visible: library.scanning || false
+                        text: "Scanning library…"
+                        explanation: library.status_text || ""
+                        icon.name: "view-refresh"
+                    }
+                }
+            }
+
+            // ── Right Now-Playing + queue panel ──────────────────────────────
+            Rectangle {
+                id: nowPlayingPanel
+                Layout.preferredWidth: root.nowPlayingVisible ? 280 : 0
+                Layout.fillHeight: true
+                clip: true
+                visible: root.nowPlayingVisible
+                color: Kirigami.Theme.alternateBackgroundColor || "#f5f5f5"
+
+                Behavior on Layout.preferredWidth {
+                    NumberAnimation { duration: 180; easing.type: Easing.InOutQuad }
+                }
+
+                Rectangle {
+                    anchors.left: parent.left
+                    width: 1
+                    height: parent.height
+                    color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                }
+
+                ColumnLayout {
+                    anchors.fill: parent
+                    anchors.topMargin: Kirigami.Units.largeSpacing
+                    anchors.leftMargin: Kirigami.Units.largeSpacing
+                    anchors.rightMargin: Kirigami.Units.largeSpacing
+                    spacing: Kirigami.Units.smallSpacing
+
+                    // Large cover
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: width
+                        radius: 8
+                        color: Kirigami.Theme.backgroundColor || "#ffffff"
+                        border.color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                        border.width: 1
+                        clip: true
+
+                        Image {
+                            id: npCover
+                            anchors.fill: parent
+                            source: player.current_cover_thumb
+                                    ? "file://" + player.current_cover_thumb
+                                    : ""
+                            fillMode: Image.PreserveAspectCrop
+                            visible: status === Image.Ready
+                        }
+
+                        Kirigami.Icon {
+                            anchors.centerIn: parent
+                            source: "media-optical-audio"
+                            width: 64
+                            height: 64
+                            color: Kirigami.Theme.disabledTextColor || "#888888"
+                            visible: !npCover.visible
+                        }
+                    }
+
+                    // Track title
+                    Controls.Label {
+                        Layout.fillWidth: true
+                        text: player.current_title || "Nothing Playing"
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.05
+                        elide: Text.ElideRight
+                        color: Kirigami.Theme.textColor || "#000000"
+                    }
+
+                    // Artist
+                    Controls.Label {
+                        Layout.fillWidth: true
+                        text: player.current_artist || ""
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
+                        elide: Text.ElideRight
+                        visible: text.length > 0
+                    }
+
+                    // State
+                    Controls.Label {
+                        text: player.state_text || "Stopped"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.8
+                        color: (player.state_text === "Playing")
+                               ? (Kirigami.Theme.positiveTextColor || "#27ae60")
+                               : (Kirigami.Theme.disabledTextColor || "#888888")
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 4
+                        height: 1
+                        color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                    }
+
+                    Controls.Label {
+                        text: "Up Next"
+                        font.bold: true
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                        font.capitalization: Font.AllUppercase
+                        font.letterSpacing: 0.5
+                    }
+
+                    // Queue list
+                    ListView {
+                        id: queueList
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        model: root.queueTracks
+                        clip: true
+
+                        Controls.ScrollBar.vertical: Controls.ScrollBar {
+                            policy: Controls.ScrollBar.AsNeeded
+                        }
+
+                        delegate: Item {
+                            width: queueList.width
+                            height: 48
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: 8
+
+                                Rectangle {
+                                    width: 36
+                                    height: 36
+                                    radius: 3
+                                    color: Kirigami.Theme.backgroundColor || "#ffffff"
+                                    clip: true
+
+                                    Image {
+                                        id: qCoverImg
+                                        anchors.fill: parent
+                                        source: (modelData && modelData.cover_thumb && modelData.cover_thumb.length > 0)
+                                                ? "file://" + modelData.cover_thumb
+                                                : ""
+                                        fillMode: Image.PreserveAspectCrop
+                                        visible: status === Image.Ready
+                                        asynchronous: true
+                                    }
+
+                                    Kirigami.Icon {
+                                        anchors.centerIn: parent
+                                        source: "audio-x-generic"
+                                        width: 18
+                                        height: 18
+                                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                                        visible: !qCoverImg.visible
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Controls.Label {
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                        text: (modelData && modelData.title) ? modelData.title : "(untitled)"
+                                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                                    }
+                                    Controls.Label {
+                                        Layout.fillWidth: true
+                                        elide: Text.ElideRight
+                                        text: (modelData && modelData.artist) ? modelData.artist : ""
+                                        color: Kirigami.Theme.disabledTextColor || "#888888"
+                                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.78
+                                        visible: text.length > 0
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: 1
+                                color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                                opacity: 0.5
+                            }
+                        }
+
+                        Controls.Label {
+                            anchors.centerIn: parent
+                            visible: queueList.count === 0
+                            text: "Queue empty"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                            color: Kirigami.Theme.disabledTextColor || "#888888"
+                        }
+                    }
+                }
             }
         }
     }
