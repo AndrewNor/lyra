@@ -133,6 +133,13 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setBitPerfect"]
         fn set_bit_perfect_invokable(self: Pin<&mut Player>, enabled: bool);
+
+        /// Return the 24 spectrum band levels (0.0..=1.0) as a JSON array.
+        /// Poll this from QML (e.g. every 33 ms) to drive the spectrum visualizer.
+        /// Returns "[0,0,...,0]" (24 zeros) when stopped.
+        #[qinvokable]
+        #[cxx_name = "spectrumLevels"]
+        fn spectrum_levels(self: Pin<&mut Player>) -> QString;
     }
 
     impl cxx_qt::Threading for Player {}
@@ -762,5 +769,31 @@ impl qobject::Player {
             }
         }
         self.as_mut().set_bit_perfect(enabled);
+    }
+
+    fn spectrum_levels(self: Pin<&mut Self>) -> QString {
+        let arr = {
+            let r = self.rust();
+            r.engine.as_ref().map(|e| e.spectrum_levels()).unwrap_or([0.0f32; 24])
+        };
+
+        // Build a compact JSON array: [0.123,0.456,...] — 24 values, 3 d.p.
+        let mut s = String::with_capacity(24 * 7 + 2);
+        s.push('[');
+        for (i, &v) in arr.iter().enumerate() {
+            if i > 0 {
+                s.push(',');
+            }
+            // Clamp and format to 3 decimal places.
+            let clamped = v.clamp(0.0, 1.0);
+            // Use a compact integer representation to avoid locale issues.
+            let millis = (clamped * 1000.0).round() as u32;
+            let whole = millis / 1000;
+            let frac = millis % 1000;
+            s.push_str(&format!("{whole}.{frac:03}"));
+        }
+        s.push(']');
+
+        QString::from(s.as_str())
     }
 }

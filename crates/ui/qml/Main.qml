@@ -52,6 +52,30 @@ Kirigami.ApplicationWindow {
         onTriggered: player.refreshPosition()
     }
 
+    // ── Spectrum analyzer polling timer ─────────────────────────────────────
+    // Polls at ~30 fps while playing; stops when paused/stopped so levels
+    // decay naturally to zero on the analyzer thread.
+    property var spectrumLevels: Array(24).fill(0)
+
+    Timer {
+        id: spectrumTimer
+        interval: 33
+        running: player.state_text === "Playing"
+        repeat: true
+        onTriggered: {
+            var raw = player.spectrumLevels()
+            if (!raw || raw.length === 0) return
+            try {
+                var parsed = JSON.parse(raw)
+                if (Array.isArray(parsed) && parsed.length === 24) {
+                    root.spectrumLevels = parsed
+                }
+            } catch(e) {
+                // Guard: ignore bad JSON
+            }
+        }
+    }
+
     // ── m:ss formatter ─────────────────────────────────────────────────────
     function fmtTime(s) {
         var n = s || 0
@@ -2249,6 +2273,99 @@ Kirigami.ApplicationWindow {
                                    ? root.accentColor
                                    : root.textDim
                             font.weight: Font.Medium
+                        }
+                    }
+
+                    // ── Spectrum visualizer ──────────────────────────────────
+                    // 24 logarithmically-spaced frequency bars driven by the
+                    // real-time FFT analyzer.  Heights animate smoothly.
+                    // Shown when a track is loaded; rests at zero when stopped.
+                    Item {
+                        Layout.fillWidth: true
+                        height: 44
+                        opacity: (player.current_title || "").length > 0 ? 1.0 : 0.0
+
+                        Behavior on opacity { NumberAnimation { duration: 400 } }
+
+                        // Gradient glow layer behind bars
+                        Rectangle {
+                            anchors.fill: parent
+                            gradient: Gradient {
+                                GradientStop { position: 0.0; color: "transparent" }
+                                GradientStop {
+                                    position: 1.0
+                                    color: Qt.rgba(
+                                        root.accentColor.r,
+                                        root.accentColor.g,
+                                        root.accentColor.b,
+                                        0.06
+                                    )
+                                }
+                            }
+                            radius: 4
+                        }
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.leftMargin: 2
+                            anchors.rightMargin: 2
+                            spacing: 2
+
+                            Repeater {
+                                model: 24
+
+                                delegate: Item {
+                                    required property int index
+                                    width: (parent.width - 46) / 24  // 46 = 23 gaps * 2
+                                    height: parent.height
+
+                                    property real barLevel: {
+                                        var lvls = root.spectrumLevels
+                                        if (!lvls || lvls.length <= index) return 0
+                                        return lvls[index] || 0
+                                    }
+
+                                    property real barHeight: barLevel * (parent.height - 4)
+
+                                    Behavior on barHeight {
+                                        NumberAnimation {
+                                            duration: 80
+                                            easing.type: Easing.OutCubic
+                                        }
+                                    }
+
+                                    // The bar itself — anchored to the bottom
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        anchors.bottomMargin: 2
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        width: parent.width
+                                        height: Math.max(2, parent.barHeight)
+                                        radius: Math.min(width, 3)
+
+                                        gradient: Gradient {
+                                            GradientStop {
+                                                position: 0.0
+                                                color: Qt.rgba(
+                                                    root.accentColor.r,
+                                                    root.accentColor.g,
+                                                    root.accentColor.b,
+                                                    0.55 + parent.parent.barLevel * 0.45
+                                                )
+                                            }
+                                            GradientStop {
+                                                position: 1.0
+                                                color: Qt.rgba(
+                                                    root.accentColor.r,
+                                                    root.accentColor.g,
+                                                    root.accentColor.b,
+                                                    0.85
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
 
