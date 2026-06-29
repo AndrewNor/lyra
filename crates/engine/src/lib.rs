@@ -11,7 +11,7 @@ mod output;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use cpal::traits::StreamTrait;
 use rtrb::RingBuffer;
@@ -19,6 +19,29 @@ use thiserror::Error;
 
 use decode_loop::DecodeThread;
 use output::{OutputDevice, RING_BUFFER_SAMPLES, build_output_stream};
+
+// ── EQ configuration ─────────────────────────────────────────────────────────
+
+/// 10-band graphic EQ center frequencies in Hz.
+pub const EQ_FREQS_HZ: [f32; 10] = [31.0, 62.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0];
+
+/// Q factor for all graphic EQ bands.
+pub const EQ_Q: f32 = 1.0;
+
+/// Shared EQ configuration, read by the decode thread.
+#[derive(Debug, Clone)]
+pub struct EqConfig {
+    /// Whether the equalizer is active.
+    pub enabled: bool,
+    /// Per-band gain in dB, range −12..+12.  Index maps to `EQ_FREQS_HZ`.
+    pub gains: [f32; 10],
+}
+
+impl Default for EqConfig {
+    fn default() -> Self {
+        Self { enabled: false, gains: [0.0; 10] }
+    }
+}
 
 /// Sentinel value for `seek_ms` meaning "no seek pending".
 pub(crate) const SEEK_NONE: u64 = u64::MAX;
@@ -102,6 +125,18 @@ pub struct Engine {
     /// Range 0.0..=1.0.  Default 1.0 (full volume).
     /// Written by `set_volume()` on the UI thread; read once per RT callback.
     volume: Arc<AtomicU32>,
+
+    /// Shared EQ configuration (enabled flag + per-band gains).
+    /// Written by UI thread; read by decode thread (mutex, not in RT callback).
+    eq_config: Arc<Mutex<EqConfig>>,
+
+    /// EQ generation counter — bumped whenever a band gain changes so the
+    /// decode thread knows to rebuild its `Equalizer` instance.
+    eq_generation: Arc<AtomicU64>,
+
+    /// Bit-perfect mode flag.  When `true` the decode thread skips EQ
+    /// (and skips resampling when rates match).
+    bit_perfect: Arc<AtomicBool>,
 }
 
 impl Engine {
@@ -123,6 +158,9 @@ impl Engine {
             seek_generation: Arc::new(AtomicU64::new(0)),
             flushing: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            eq_config: Arc::new(Mutex::new(EqConfig::default())),
+            eq_generation: Arc::new(AtomicU64::new(0)),
+            bit_perfect: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -172,6 +210,9 @@ impl Engine {
             Arc::clone(&self.seek_generation),
             Arc::clone(&self.flushing),
             Arc::clone(&self.frames_played),
+            Arc::clone(&self.eq_config),
+            Arc::clone(&self.eq_generation),
+            Arc::clone(&self.bit_perfect),
         )?;
 
         self.stream = Some(stream);
@@ -257,6 +298,63 @@ impl Engine {
     /// Return the current master volume gain (0.0..=1.0).
     pub fn volume(&self) -> f32 {
         f32::from_bits(self.volume.load(Ordering::Relaxed))
+    }
+
+    /// Enable or disable the graphic equalizer.
+    /// Takes effect on the decode thread within one chunk (no latency guarantee).
+    pub fn set_eq_enabled(&self, enabled: bool) {
+        if let Ok(mut cfg) = self.eq_config.lock() {
+            cfg.enabled = enabled;
+        }
+        // Bump generation so the decode thread rebuilds the Equalizer.
+        self.eq_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Return whether the EQ is currently enabled.
+    pub fn eq_enabled(&self) -> bool {
+        self.eq_config.lock().map(|c| c.enabled).unwrap_or(false)
+    }
+
+    /// Set the gain for one EQ band.
+    ///
+    /// `band` is 0..10 (index into `EQ_FREQS_HZ`).
+    /// `db` is clamped to −12..+12.
+    /// Bumps the generation counter so the decode thread rebuilds its Equalizer.
+    pub fn set_eq_gain(&self, band: usize, db: f32) {
+        if band >= 10 {
+            return;
+        }
+        let clamped = db.clamp(-12.0, 12.0);
+        if let Ok(mut cfg) = self.eq_config.lock() {
+            cfg.gains[band] = clamped;
+        }
+        self.eq_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Return a snapshot of the current EQ gains ([f32; 10]).
+    pub fn eq_gains(&self) -> [f32; 10] {
+        self.eq_config.lock().map(|c| c.gains).unwrap_or([0.0; 10])
+    }
+
+    /// Reset all EQ band gains to 0 dB (flat).
+    pub fn reset_eq(&self) {
+        if let Ok(mut cfg) = self.eq_config.lock() {
+            cfg.gains = [0.0; 10];
+        }
+        self.eq_generation.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Enable or disable bit-perfect mode.
+    ///
+    /// When enabled: EQ is bypassed, and resampling is skipped if the file
+    /// sample rate matches the device rate.
+    pub fn set_bit_perfect(&self, enabled: bool) {
+        self.bit_perfect.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Return whether bit-perfect mode is active.
+    pub fn bit_perfect(&self) -> bool {
+        self.bit_perfect.load(Ordering::Relaxed)
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────────

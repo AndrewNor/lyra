@@ -1,19 +1,19 @@
-//! Decode thread: SymphoniaDecoder → optional resample → rtrb::Producer.
+//! Decode thread: SymphoniaDecoder → optional EQ → optional resample → rtrb::Producer.
 //!
 //! This runs on a dedicated OS thread (not the audio callback thread).
 //! It is allowed to allocate and may park briefly when the ring buffer is full.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
 use lyra_decoder::{Decoder, SymphoniaDecoder};
-use lyra_dsp::StreamResampler;
+use lyra_dsp::{EqBand, Equalizer, StreamResampler};
 use rtrb::Producer;
 
-use crate::{Error, SEEK_NONE};
+use crate::{EqConfig, Error, EQ_FREQS_HZ, EQ_Q, SEEK_NONE};
 
 /// Handle to the decode thread.  Dropping this signals the thread to stop and
 /// joins it (best-effort; the thread may still be parking on a full buffer but
@@ -26,12 +26,11 @@ pub(crate) struct DecodeThread {
 impl DecodeThread {
     /// Spawn a decode thread that:
     /// 1. Opens `path` with `SymphoniaDecoder`.
-    /// 2. If the file's sample rate ≠ `device_rate`, resamples to `device_rate`
-    ///    via a persistent `lyra_dsp::StreamResampler` (one per track; reset on
-    ///    seek so the filter delay line is flushed without re-allocating).
-    /// 3. If the file's channel count ≠ `device_channels`, adapts (upmix mono
-    ///    to stereo by duplicating; mixdown N→stereo by summing first two
-    ///    channels; or truncate/pad to match).
+    /// 2. Unless `bit_perfect` is set AND file_rate == device_rate: applies
+    ///    a 10-band graphic `Equalizer` on the file-rate PCM (rebuilt whenever
+    ///    `eq_generation` changes), then resamples to `device_rate` via a
+    ///    persistent `lyra_dsp::StreamResampler`.
+    /// 3. If the file's channel count ≠ `device_channels`, adapts channels.
     /// 4. Pushes interleaved f32 into `producer`, parking briefly when full.
     /// 5. Exits when `stop_flag` is set, `paused_flag` causes it to spin-wait,
     ///    or the file is exhausted.
@@ -54,6 +53,9 @@ impl DecodeThread {
         seek_generation: Arc<AtomicU64>,
         flushing: Arc<AtomicBool>,
         frames_played: Arc<AtomicU64>,
+        eq_config: Arc<Mutex<EqConfig>>,
+        eq_generation: Arc<AtomicU64>,
+        bit_perfect: Arc<AtomicBool>,
     ) -> Result<Self, Error> {
         // Open the decoder eagerly on the calling thread so open errors
         // propagate to Engine::play() synchronously.
@@ -83,6 +85,9 @@ impl DecodeThread {
                     &seek_generation,
                     &flushing,
                     &frames_played,
+                    &eq_config,
+                    &eq_generation,
+                    &bit_perfect,
                 );
             })
             .map_err(|e| Error::Thread(e.to_string()))?;
@@ -135,6 +140,9 @@ fn decode_loop(
     _seek_generation: &AtomicU64,
     flushing: &AtomicBool,
     frames_played: &AtomicU64,
+    eq_config: &Mutex<EqConfig>,
+    eq_generation: &AtomicU64,
+    bit_perfect: &AtomicBool,
 ) {
     // Build a persistent resampler once per track.  Only created when the file
     // rate differs from the device rate; otherwise it stays `None` and we skip
@@ -157,6 +165,11 @@ fn decode_loop(
     } else {
         None
     };
+
+    // EQ state: the Equalizer instance and the generation at which it was built.
+    // We rebuild it whenever `eq_generation` has changed since last build.
+    let mut eq_instance: Option<Equalizer> = None;
+    let mut eq_gen_seen: u64 = u64::MAX; // force rebuild on first use
 
     loop {
         if stop.load(Ordering::Relaxed) {
@@ -216,7 +229,17 @@ fn decode_loop(
                             }
                         };
 
-                        let chunk = resample_chunk(&mut stream_resampler, chunk);
+                        let chunk = apply_eq_and_resample(
+                            chunk,
+                            file_rate,
+                            file_channels,
+                            &mut stream_resampler,
+                            eq_config,
+                            eq_generation,
+                            &mut eq_instance,
+                            &mut eq_gen_seen,
+                            bit_perfect,
+                        );
                         let chunk = adapt_channels(&chunk, file_channels, device_channels);
 
                         // Push the chunk; bail on stop or new seek.
@@ -255,8 +278,18 @@ fn decode_loop(
             }
         };
 
-        // Resample through the persistent StreamResampler (if needed).
-        let chunk = resample_chunk(&mut stream_resampler, chunk);
+        // Apply EQ (at file rate) and resample (if needed).
+        let chunk = apply_eq_and_resample(
+            chunk,
+            file_rate,
+            file_channels,
+            &mut stream_resampler,
+            eq_config,
+            eq_generation,
+            &mut eq_instance,
+            &mut eq_gen_seen,
+            bit_perfect,
+        );
 
         // Adapt channel count if necessary.
         let chunk = adapt_channels(&chunk, file_channels, device_channels);
@@ -268,14 +301,77 @@ fn decode_loop(
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/// Pass `chunk` through the persistent `StreamResampler` if one is present,
-/// otherwise return it unchanged.
+/// Build a fresh 10-band Equalizer from the current EqConfig gains.
 ///
-/// On resampler error, logs and returns an empty vec (the decode loop will
-/// push nothing for this chunk and continue; audio will be briefly silent
-/// rather than crashing).
-fn resample_chunk(resampler: &mut Option<StreamResampler>, chunk: Vec<f32>) -> Vec<f32> {
-    match resampler {
+/// Called whenever the generation counter changes.  Returns `None` if all
+/// gains are 0 dB (identity — no point running filter math) or if
+/// construction fails.
+fn build_equalizer(sample_rate: u32, cfg: &EqConfig) -> Option<Equalizer> {
+    if !cfg.enabled {
+        return None;
+    }
+    let bands: Vec<EqBand> = EQ_FREQS_HZ
+        .iter()
+        .zip(cfg.gains.iter())
+        .map(|(&freq_hz, &gain_db)| EqBand { freq_hz, gain_db, q: EQ_Q })
+        .collect();
+    match Equalizer::new(sample_rate, &bands) {
+        Ok(eq) => Some(eq),
+        Err(e) => {
+            eprintln!("[lyra-engine] EQ build error: {e}");
+            None
+        }
+    }
+}
+
+/// Apply EQ (if enabled and not bit-perfect) then resample (if needed and
+/// not bit-perfect with matching rates).
+///
+/// EQ runs at the file sample rate, before resampling — this is the correct
+/// order so filter cutoffs are in terms of the source material's frequency
+/// grid.
+#[allow(clippy::too_many_arguments)]
+fn apply_eq_and_resample(
+    mut chunk: Vec<f32>,
+    file_rate: u32,
+    file_channels: u16,
+    stream_resampler: &mut Option<StreamResampler>,
+    eq_config: &Mutex<EqConfig>,
+    eq_generation: &AtomicU64,
+    eq_instance: &mut Option<Equalizer>,
+    eq_gen_seen: &mut u64,
+    bit_perfect: &AtomicBool,
+) -> Vec<f32> {
+    let is_bit_perfect = bit_perfect.load(Ordering::Relaxed);
+
+    // ── EQ ──────────────────────────────────────────────────────────────────
+    if !is_bit_perfect {
+        // Check if the EQ instance needs to be rebuilt.
+        let current_gen = eq_generation.load(Ordering::Relaxed);
+        if current_gen != *eq_gen_seen {
+            *eq_gen_seen = current_gen;
+            // Lock briefly to snapshot the config; don't hold across process().
+            *eq_instance = eq_config
+                .lock()
+                .ok()
+                .and_then(|cfg| build_equalizer(file_rate, &cfg));
+        }
+
+        if let Some(ref mut eq) = eq_instance {
+            eq.process(&mut chunk, file_channels);
+        }
+    }
+
+    // ── Resample ────────────────────────────────────────────────────────────
+    // In bit-perfect mode, skip resampling if the resampler is absent
+    // (rates already match).  If rates differ we must still resample to
+    // produce audio at the device rate — true device-exclusive bit-perfect
+    // requires OS-level exclusive mode, which is a deeper follow-on.
+    if is_bit_perfect && stream_resampler.is_none() {
+        return chunk;
+    }
+
+    match stream_resampler {
         None => chunk,
         Some(rs) => match rs.process_chunk(&chunk) {
             Ok(out) => out,
