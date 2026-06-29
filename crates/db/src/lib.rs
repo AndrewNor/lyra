@@ -3,7 +3,7 @@ mod schema;
 pub mod model;
 pub mod queries;
 
-pub use model::{NewTrack, Track};
+pub use model::{Album, Artist, NewTrack, Track};
 
 use std::path::Path;
 

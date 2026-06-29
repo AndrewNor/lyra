@@ -1,6 +1,6 @@
 //! Database query implementations.
 
-use crate::{model::{NewTrack, Track}, Db, Result};
+use crate::{model::{Album, Artist, NewTrack, Track}, Db, Result};
 
 const SELECT_TRACK: &str = "SELECT t.id, t.path, t.title, ar.name, al.title, t.track_no, t.duration_ms, t.cover_thumb \
     FROM tracks t LEFT JOIN artists ar ON ar.id=t.artist_id LEFT JOIN albums al ON al.id=t.album_id";
@@ -101,6 +101,77 @@ impl Db {
         let rows = stmt.query_map([term], row_to_track)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
+
+    /// Returns all albums with joined artist name and per-album track count / cover.
+    /// `cover_thumb` is the MAX (any non-null) cover stored on the album's tracks.
+    pub fn list_albums(&self) -> Result<Vec<Album>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT al.id, al.title, ar.name, al.year, \
+                    COUNT(t.id) AS track_count, MAX(t.cover_thumb) AS cover_thumb \
+             FROM albums al \
+             LEFT JOIN artists ar ON ar.id = al.artist_id \
+             LEFT JOIN tracks  t  ON t.album_id = al.id \
+             GROUP BY al.id \
+             ORDER BY al.title",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Album {
+                id:          r.get(0)?,
+                title:       r.get(1)?,
+                artist:      r.get(2)?,
+                year:        r.get(3)?,
+                track_count: r.get(4)?,
+                cover_thumb: r.get(5)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Returns all artists with aggregate album_count and track_count.
+    pub fn list_artists(&self) -> Result<Vec<Artist>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ar.id, ar.name, \
+                    COUNT(DISTINCT t.album_id) AS album_count, \
+                    COUNT(t.id)               AS track_count \
+             FROM artists ar \
+             LEFT JOIN tracks t ON t.artist_id = ar.id \
+             GROUP BY ar.id \
+             ORDER BY ar.name",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(Artist {
+                id:          r.get(0)?,
+                name:        r.get(1)?,
+                album_count: r.get(2)?,
+                track_count: r.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Returns all tracks in the given album, ordered by disc_no then track_no.
+    pub fn tracks_by_album(&self, album_id: i64) -> Result<Vec<Track>> {
+        let sql = format!(
+            "{SELECT_TRACK} \
+             WHERE t.album_id = ?1 \
+             ORDER BY t.disc_no, t.track_no"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([album_id], row_to_track)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    /// Returns all tracks by the given artist, ordered by album title then track_no.
+    pub fn tracks_by_artist(&self, artist_id: i64) -> Result<Vec<Track>> {
+        let sql = format!(
+            "{SELECT_TRACK} \
+             WHERE t.artist_id = ?1 \
+             ORDER BY al.title, t.track_no"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map([artist_id], row_to_track)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
 }
 
 #[cfg(test)]
@@ -114,6 +185,103 @@ mod tests {
             album_artist: Some(artist.into()), track_no: Some(1), disc_no: Some(1),
             year: Some(2020), duration_ms: Some(180_000), mtime: 100, cover_thumb: None,
         }
+    }
+
+    /// Helper: insert 4 tracks across 2 albums and 2 artists.
+    /// Album A ("Alpha Album") has 3 tracks by "Artist One", track 1 has a cover_thumb.
+    /// Album B ("Beta Album") has 1 track by "Artist Two", no cover_thumb.
+    fn seed_two_artists_two_albums(db: &mut Db) {
+        let mut t1 = nt("/m/a1.flac", "Alpha Track 1", "Artist One", "Alpha Album");
+        t1.track_no = Some(1); t1.disc_no = Some(1); t1.cover_thumb = Some("/art/alpha.jpg".into());
+
+        let mut t2 = nt("/m/a2.flac", "Alpha Track 2", "Artist One", "Alpha Album");
+        t2.track_no = Some(2); t2.disc_no = Some(1);
+
+        let mut t3 = nt("/m/a3.flac", "Alpha Track 3", "Artist One", "Alpha Album");
+        t3.track_no = Some(3); t3.disc_no = Some(1);
+
+        let mut t4 = nt("/m/b1.flac", "Beta Track 1", "Artist Two", "Beta Album");
+        t4.track_no = Some(1); t4.disc_no = Some(1);
+
+        db.upsert_track(&t1).unwrap();
+        db.upsert_track(&t2).unwrap();
+        db.upsert_track(&t3).unwrap();
+        db.upsert_track(&t4).unwrap();
+    }
+
+    #[test]
+    fn list_albums_count_and_track_counts() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+
+        let albums = db.list_albums().unwrap();
+        assert_eq!(albums.len(), 2, "expected 2 albums");
+
+        // Albums are sorted by title: Alpha Album, Beta Album.
+        let alpha = &albums[0];
+        assert_eq!(alpha.title, "Alpha Album");
+        assert_eq!(alpha.track_count, 3, "Alpha Album should have 3 tracks");
+        assert!(
+            alpha.cover_thumb.as_deref().is_some(),
+            "Alpha Album should carry a cover_thumb"
+        );
+        assert_eq!(alpha.cover_thumb.as_deref(), Some("/art/alpha.jpg"));
+
+        let beta = &albums[1];
+        assert_eq!(beta.title, "Beta Album");
+        assert_eq!(beta.track_count, 1, "Beta Album should have 1 track");
+        // No cover was set for Beta Album tracks.
+        assert!(beta.cover_thumb.is_none(), "Beta Album should have no cover_thumb");
+    }
+
+    #[test]
+    fn list_artists_album_and_track_counts() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+
+        let artists = db.list_artists().unwrap();
+        assert_eq!(artists.len(), 2, "expected 2 artists");
+
+        // Sorted by name: Artist One, Artist Two.
+        let one = &artists[0];
+        assert_eq!(one.name, "Artist One");
+        assert_eq!(one.track_count, 3);
+        assert_eq!(one.album_count, 1, "Artist One has tracks in 1 album");
+
+        let two = &artists[1];
+        assert_eq!(two.name, "Artist Two");
+        assert_eq!(two.track_count, 1);
+        assert_eq!(two.album_count, 1, "Artist Two has tracks in 1 album");
+    }
+
+    #[test]
+    fn tracks_by_album_returns_correct_rows_in_order() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+
+        let albums = db.list_albums().unwrap();
+        let alpha_id = albums.iter().find(|a| a.title == "Alpha Album").unwrap().id;
+
+        let tracks = db.tracks_by_album(alpha_id).unwrap();
+        assert_eq!(tracks.len(), 3, "should return 3 tracks for Alpha Album");
+        // disc_no and track_no ordering: 1/1, 1/2, 1/3.
+        assert_eq!(tracks[0].title, "Alpha Track 1");
+        assert_eq!(tracks[1].title, "Alpha Track 2");
+        assert_eq!(tracks[2].title, "Alpha Track 3");
+    }
+
+    #[test]
+    fn tracks_by_artist_returns_correct_rows() {
+        let mut db = Db::open_in_memory().unwrap();
+        seed_two_artists_two_albums(&mut db);
+
+        let artists = db.list_artists().unwrap();
+        let artist_one_id = artists.iter().find(|a| a.name == "Artist One").unwrap().id;
+
+        let tracks = db.tracks_by_artist(artist_one_id).unwrap();
+        assert_eq!(tracks.len(), 3, "Artist One has 3 tracks");
+        // All belong to Alpha Album; within album ordered by track_no.
+        assert!(tracks.iter().all(|t| t.album.as_deref() == Some("Alpha Album")));
     }
 
     #[test]
