@@ -11,8 +11,18 @@ Item {
     property var trackData: null
     property int trackIndex: 0
     property bool isCurrentTrack: false
+    // Playlists array passed from the parent view — [{id, name, track_count}]
+    property var playlistsModel: []
+    // The current playlist id when in playlist_detail view (-1 otherwise)
+    property int currentPlaylistId: -1
 
     signal trackClicked(int idx)
+    // Emitted when user picks "Add to playlist" from the context menu
+    signal addToPlaylistRequested(int trackId, int playlistId)
+    // Emitted when user picks "Remove from playlist"
+    signal removeFromPlaylistRequested(int trackId, int playlistId)
+    // Emitted when user picks "New playlist…" from the context menu
+    signal newPlaylistRequested(int trackId)
 
     height: 64
 
@@ -264,7 +274,92 @@ Item {
         anchors.fill: parent
         hoverEnabled: true
         cursorShape: Qt.PointingHandCursor
-        onClicked: root.trackClicked(root.trackIndex)
-        onDoubleClicked: root.trackClicked(root.trackIndex)
+        acceptedButtons: Qt.LeftButton | Qt.RightButton
+        onClicked: function(mouse) {
+            if (mouse.button === Qt.RightButton) {
+                contextMenu.popup()
+            } else {
+                root.trackClicked(root.trackIndex)
+            }
+        }
+        onDoubleClicked: function(mouse) {
+            if (mouse.button === Qt.LeftButton)
+                root.trackClicked(root.trackIndex)
+        }
+    }
+
+    // ── Hover "+" add-to-playlist button ─────────────────────────────────
+    Controls.ToolButton {
+        id: addBtn
+        anchors.right: parent.right
+        anchors.rightMargin: 56  // leave room for duration label
+        anchors.verticalCenter: parent.verticalCenter
+        visible: delegateHover.containsMouse && (root.playlistsModel.length > 0 || true)
+        text: "+"
+        font.bold: true
+        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
+        implicitWidth: 24
+        implicitHeight: 24
+        flat: true
+        opacity: 0.60
+        padding: 0
+        Controls.ToolTip.visible: hovered
+        Controls.ToolTip.text: "Add to playlist"
+        Controls.ToolTip.delay: 300
+        onClicked: contextMenu.popup()
+    }
+
+    // ── Context menu ──────────────────────────────────────────────────────
+    Controls.Menu {
+        id: contextMenu
+
+        Controls.MenuItem {
+            text: "Play"
+            onTriggered: root.trackClicked(root.trackIndex)
+        }
+
+        Controls.MenuSeparator {}
+
+        // "Remove from this playlist" — only shown in playlist_detail view
+        Controls.MenuItem {
+            visible: root.currentPlaylistId >= 0
+            height: visible ? implicitHeight : 0
+            text: "Remove from playlist"
+            onTriggered: {
+                if (root.trackData && root.currentPlaylistId >= 0)
+                    root.removeFromPlaylistRequested(root.trackData.id, root.currentPlaylistId)
+            }
+        }
+
+        Controls.MenuSeparator {
+            visible: root.currentPlaylistId >= 0
+            height: visible ? implicitHeight : 0
+        }
+
+        Controls.MenuItem {
+            text: "New playlist…"
+            onTriggered: {
+                if (root.trackData)
+                    root.newPlaylistRequested(root.trackData.id)
+            }
+        }
+
+        Controls.MenuSeparator {
+            visible: root.playlistsModel.length > 0
+            height: visible ? implicitHeight : 0
+        }
+
+        // Dynamic playlist entries — add track to existing playlist
+        Repeater {
+            model: root.playlistsModel
+            delegate: Controls.MenuItem {
+                required property var modelData
+                text: modelData ? (modelData.name || "Untitled") : ""
+                onTriggered: {
+                    if (root.trackData && modelData)
+                        root.addToPlaylistRequested(root.trackData.id, modelData.id)
+                }
+            }
+        }
     }
 }

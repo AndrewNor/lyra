@@ -24,6 +24,7 @@ pub mod qobject {
         #[qproperty(QString, albums_json)]
         #[qproperty(QString, artists_json)]
         #[qproperty(QString, genres_json)]
+        #[qproperty(QString, playlists_json)]
         type Library = super::LibraryRust;
 
         /// Load all tracks from the db → resultsJson + trackCount.
@@ -68,6 +69,46 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "loadGenreTracks"]
         fn load_genre_tracks(self: Pin<&mut Library>, genre: QString);
+
+        /// Load all playlists → playlists_json [{id,name,track_count}].
+        #[qinvokable]
+        #[cxx_name = "loadPlaylists"]
+        fn load_playlists(self: Pin<&mut Library>);
+
+        /// Load tracks for a specific playlist → results_json.
+        #[qinvokable]
+        #[cxx_name = "loadPlaylistTracks"]
+        fn load_playlist_tracks(self: Pin<&mut Library>, id: i64);
+
+        /// Create a new playlist with the given name, then reload playlists.
+        #[qinvokable]
+        #[cxx_name = "createPlaylist"]
+        fn create_playlist(self: Pin<&mut Library>, name: QString);
+
+        /// Add a track to a playlist.
+        #[qinvokable]
+        #[cxx_name = "addToPlaylist"]
+        fn add_to_playlist(self: Pin<&mut Library>, playlist_id: i64, track_id: i64);
+
+        /// Remove a track from a playlist.
+        #[qinvokable]
+        #[cxx_name = "removeFromPlaylist"]
+        fn remove_from_playlist(self: Pin<&mut Library>, playlist_id: i64, track_id: i64);
+
+        /// Delete a playlist (cascades playlist_tracks).
+        #[qinvokable]
+        #[cxx_name = "deletePlaylist"]
+        fn delete_playlist(self: Pin<&mut Library>, id: i64);
+
+        /// Rename a playlist.
+        #[qinvokable]
+        #[cxx_name = "renamePlaylist"]
+        fn rename_playlist(self: Pin<&mut Library>, id: i64, name: QString);
+
+        /// Load the 200 most recently added tracks → results_json.
+        #[qinvokable]
+        #[cxx_name = "loadRecentlyAdded"]
+        fn load_recently_added(self: Pin<&mut Library>);
     }
 
     impl cxx_qt::Threading for Library {}
@@ -76,7 +117,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use lyra_db::{Album, Artist, Db, Genre, Track};
+use lyra_db::{Album, Artist, Db, Genre, Playlist, Track};
 
 use crate::paths::{art_cache_dir, library_db_path};
 
@@ -90,6 +131,7 @@ pub struct LibraryRust {
     albums_json: QString,
     artists_json: QString,
     genres_json: QString,
+    playlists_json: QString,
 
     /// Live database connection (Qt thread only).
     db: Db,
@@ -136,6 +178,7 @@ impl Default for LibraryRust {
             albums_json: QString::from("[]"),
             artists_json: QString::from("[]"),
             genres_json: QString::from("[]"),
+            playlists_json: QString::from("[]"),
             db,
             music_dir,
         }
@@ -207,6 +250,21 @@ pub(crate) fn genres_to_json(genres: &[Genre]) -> String {
             serde_json::json!({
                 "name": g.name,
                 "track_count": g.track_count,
+            })
+        })
+        .collect();
+    serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Build a JSON array string from a slice of `Playlist`s.
+pub(crate) fn playlists_to_json(playlists: &[Playlist]) -> String {
+    let values: Vec<serde_json::Value> = playlists
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "name": p.name,
+                "track_count": p.track_count,
             })
         })
         .collect();
@@ -417,6 +475,142 @@ impl qobject::Library {
             }
             Err(e) => {
                 let msg = format!("loadGenreTracks error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_playlists(mut self: Pin<&mut Self>) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .list_playlists();
+        match result {
+            Ok(playlists) => {
+                let json = playlists_to_json(&playlists);
+                self.as_mut().set_playlists_json(QString::from(json.as_str()));
+                let msg = format!("{} playlists", playlists.len());
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadPlaylists error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_playlist_tracks(mut self: Pin<&mut Self>, id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .playlist_tracks(id);
+        match result {
+            Ok(tracks) => {
+                let count = tracks.len() as i32;
+                let json = tracks_to_json(&tracks);
+                self.as_mut().set_results_json(QString::from(json.as_str()));
+                self.as_mut().set_track_count(count);
+                let msg = format!("{count} tracks");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadPlaylistTracks error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn create_playlist(mut self: Pin<&mut Self>, name: QString) {
+        let name_str = name.to_string();
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .create_playlist(&name_str);
+        match result {
+            Ok(_) => {
+                // Reload playlists so QML sees the new entry immediately.
+                self.load_playlists();
+            }
+            Err(e) => {
+                let msg = format!("createPlaylist error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn add_to_playlist(mut self: Pin<&mut Self>, playlist_id: i64, track_id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .add_to_playlist(playlist_id, track_id);
+        match result {
+            Ok(_) => {
+                self.load_playlists();
+            }
+            Err(e) => {
+                let msg = format!("addToPlaylist error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn remove_from_playlist(mut self: Pin<&mut Self>, playlist_id: i64, track_id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .remove_from_playlist(playlist_id, track_id);
+        match result {
+            Ok(_) => {
+                self.load_playlists();
+            }
+            Err(e) => {
+                let msg = format!("removeFromPlaylist error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn delete_playlist(mut self: Pin<&mut Self>, id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .delete_playlist(id);
+        match result {
+            Ok(_) => {
+                self.load_playlists();
+            }
+            Err(e) => {
+                let msg = format!("deletePlaylist error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn rename_playlist(mut self: Pin<&mut Self>, id: i64, name: QString) {
+        let name_str = name.to_string();
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .rename_playlist(id, &name_str);
+        match result {
+            Ok(_) => {
+                self.load_playlists();
+            }
+            Err(e) => {
+                let msg = format!("renamePlaylist error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_recently_added(mut self: Pin<&mut Self>) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .recently_added(200);
+        match result {
+            Ok(tracks) => {
+                let count = tracks.len() as i32;
+                let json = tracks_to_json(&tracks);
+                self.as_mut().set_results_json(QString::from(json.as_str()));
+                self.as_mut().set_track_count(count);
+                let msg = format!("{count} recently added");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadRecentlyAdded error: {e}");
                 self.as_mut().set_status_text(QString::from(msg.as_str()));
             }
         }

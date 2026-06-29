@@ -32,12 +32,14 @@ Kirigami.ApplicationWindow {
 
     Component.onCompleted: {
         library.loadAll()
+        library.loadPlaylists()
         player.initMpris()
     }
 
     // ── View state machine ──────────────────────────────────────────────────
     property string view: "songs"
     property string detailName: ""
+    property int detailPlaylistId: -1
 
     // ── Position polling timer ──────────────────────────────────────────────
     Timer {
@@ -83,6 +85,128 @@ Kirigami.ApplicationWindow {
         var s = library.genres_json
         if (!s || s.length === 0) return []
         try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    property var playlists: {
+        var s = library.playlists_json
+        if (!s || s.length === 0) return []
+        try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    // ── New playlist dialog ──────────────────────────────────────────────────
+    property string newPlaylistName: ""
+    // Track id to add after creating a new playlist (-1 = none)
+    property int _pendingAddTrackId: -1
+
+    // Inline create-playlist dialog (Kirigami PromptDialog equivalent using
+    // Controls.Dialog since Kirigami.PromptDialog may not be available in all
+    // installed Kirigami versions).
+    Controls.Dialog {
+        id: newPlaylistDialog
+        title: "New Playlist"
+        modal: true
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            Controls.Label {
+                text: "Playlist name:"
+                color: root.textPrimary
+            }
+
+            Controls.TextField {
+                id: newPlaylistField
+                Layout.fillWidth: true
+                placeholderText: "My Playlist"
+                color: root.textPrimary
+                background: Rectangle {
+                    color: Qt.rgba(1, 1, 1, 0.08)
+                    radius: 6
+                }
+                Keys.onReturnPressed: newPlaylistDialog.accept()
+            }
+        }
+
+        onAccepted: {
+            var n = newPlaylistField.text.trim()
+            if (n.length > 0) {
+                library.createPlaylist(n)
+                // If a track was queued to add, find the new playlist id after
+                // playlists_json updates and add the track.
+                if (root._pendingAddTrackId >= 0) {
+                    var tid = root._pendingAddTrackId
+                    // Use a short timer to let playlists_json update first.
+                    Qt.callLater(function() {
+                        var pls = root.playlists
+                        // Find the playlist matching the name we just created.
+                        for (var i = 0; i < pls.length; i++) {
+                            if (pls[i].name === n) {
+                                library.addToPlaylist(pls[i].id, tid)
+                                break
+                            }
+                        }
+                    })
+                }
+            }
+            newPlaylistField.text = ""
+            root._pendingAddTrackId = -1
+        }
+        onRejected: {
+            newPlaylistField.text = ""
+            root._pendingAddTrackId = -1
+        }
+    }
+
+    // ── Rename playlist dialog ───────────────────────────────────────────────
+    property int renamePlaylistId: -1
+
+    Controls.Dialog {
+        id: renamePlaylistDialog
+        title: "Rename Playlist"
+        modal: true
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 8
+
+            Controls.Label {
+                text: "New name:"
+                color: root.textPrimary
+            }
+
+            Controls.TextField {
+                id: renamePlaylistField
+                Layout.fillWidth: true
+                placeholderText: "Playlist name"
+                color: root.textPrimary
+                background: Rectangle {
+                    color: Qt.rgba(1, 1, 1, 0.08)
+                    radius: 6
+                }
+                Keys.onReturnPressed: renamePlaylistDialog.accept()
+            }
+        }
+
+        onAccepted: {
+            var n = renamePlaylistField.text.trim()
+            if (n.length > 0 && root.renamePlaylistId >= 0) {
+                library.renamePlaylist(root.renamePlaylistId, n)
+                root.detailName = n
+            }
+            renamePlaylistField.text = ""
+            root.renamePlaylistId = -1
+        }
+        onRejected: {
+            renamePlaylistField.text = ""
+            root.renamePlaylistId = -1
+        }
     }
 
     property var queueTracks: {
@@ -675,7 +799,11 @@ Kirigami.ApplicationWindow {
                     SidebarItem {
                         iconName: "view-calendar-recent-events"
                         label: "Recently Added"
-                        enabled: false
+                        active: root.view === "recently"
+                        onActivated: {
+                            root.view = "recently"
+                            library.loadRecentlyAdded()
+                        }
                     }
 
                     // Separator
@@ -689,28 +817,70 @@ Kirigami.ApplicationWindow {
                         color: root.sepColor
                     }
 
-                    // Playlists section header
-                    Controls.Label {
+                    // Playlists section header + New button
+                    RowLayout {
+                        Layout.fillWidth: true
                         Layout.leftMargin: 20
-                        Layout.bottomMargin: 4
+                        Layout.rightMargin: 8
                         Layout.topMargin: 4
-                        text: "Playlists"
-                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
-                        color: root.textFaint
-                        font.capitalization: Font.AllUppercase
-                        font.letterSpacing: 1.4
-                        font.weight: Font.Medium
+                        Layout.bottomMargin: 4
+                        spacing: 0
+
+                        Controls.Label {
+                            Layout.fillWidth: true
+                            text: "Playlists"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
+                            color: root.textFaint
+                            font.capitalization: Font.AllUppercase
+                            font.letterSpacing: 1.4
+                            font.weight: Font.Medium
+                        }
+
+                        Controls.ToolButton {
+                            text: "+"
+                            font.bold: true
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
+                            implicitHeight: 20
+                            implicitWidth: 22
+                            opacity: 0.60
+                            flat: true
+                            padding: 0
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.text: "New playlist"
+                            Controls.ToolTip.delay: 400
+                            onClicked: {
+                                newPlaylistField.text = ""
+                                newPlaylistDialog.open()
+                            }
+                        }
                     }
 
-                    SidebarItem {
-                        iconName: "view-media-playlist"
-                        label: "Favourites"
-                        enabled: false
+                    // Real playlists from db
+                    Repeater {
+                        model: root.playlists
+                        delegate: SidebarItem {
+                            required property var modelData
+                            iconName: "view-media-playlist"
+                            label: modelData ? (modelData.name || "Untitled") : ""
+                            active: root.view === "playlist_detail" && root.detailPlaylistId === (modelData ? modelData.id : -1)
+                            onActivated: {
+                                if (!modelData) return
+                                root.detailName = modelData.name || ""
+                                root.detailPlaylistId = modelData.id
+                                library.loadPlaylistTracks(modelData.id)
+                                root.view = "playlist_detail"
+                            }
+                        }
                     }
-                    SidebarItem {
-                        iconName: "view-media-playlist"
-                        label: "Mix 1"
-                        enabled: false
+
+                    // "No playlists" hint when empty
+                    Controls.Label {
+                        visible: root.playlists.length === 0
+                        Layout.leftMargin: 20
+                        text: "No playlists yet"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.72
+                        color: root.textFaint
+                        font.italic: true
                     }
 
                     // Separator
@@ -772,6 +942,8 @@ Kirigami.ApplicationWindow {
                              || root.view === "album_detail"
                              || root.view === "artist_detail"
                              || root.view === "genre_detail"
+                             || root.view === "playlist_detail"
+                             || root.view === "recently"
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -782,11 +954,15 @@ Kirigami.ApplicationWindow {
                             Layout.fillWidth: true
                             height: (root.view === "album_detail"
                                      || root.view === "artist_detail"
-                                     || root.view === "genre_detail")
+                                     || root.view === "genre_detail"
+                                     || root.view === "playlist_detail"
+                                     || root.view === "recently")
                                     ? 48 : 0
                             visible: root.view === "album_detail"
                                      || root.view === "artist_detail"
                                      || root.view === "genre_detail"
+                                     || root.view === "playlist_detail"
+                                     || root.view === "recently"
                             clip: true
 
                             Rectangle {
@@ -801,16 +977,22 @@ Kirigami.ApplicationWindow {
                                 spacing: 10
 
                                 Controls.ToolButton {
-                                    text: root.view === "album_detail"
-                                          ? "‹ Albums"
-                                          : root.view === "genre_detail"
-                                            ? "‹ Genres"
-                                            : "‹ Artists"
+                                    text: {
+                                        if (root.view === "album_detail") return "‹ Albums"
+                                        if (root.view === "genre_detail") return "‹ Genres"
+                                        if (root.view === "playlist_detail") return "‹ Playlists"
+                                        if (root.view === "recently") return "‹ Library"
+                                        return "‹ Artists"
+                                    }
                                     onClicked: {
                                         if (root.view === "album_detail")
                                             root.view = "albums"
                                         else if (root.view === "genre_detail")
                                             root.view = "genres"
+                                        else if (root.view === "playlist_detail")
+                                            root.view = "songs"
+                                        else if (root.view === "recently")
+                                            root.view = "songs"
                                         else
                                             root.view = "artists"
                                     }
@@ -819,10 +1001,38 @@ Kirigami.ApplicationWindow {
                                 Controls.Label {
                                     Layout.fillWidth: true
                                     elide: Text.ElideRight
-                                    text: root.detailName
+                                    text: root.view === "recently" ? "Recently Added" : root.detailName
                                     font.bold: true
                                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.08
                                     color: root.textPrimary
+                                }
+
+                                // Playlist-specific actions (rename / delete)
+                                Controls.ToolButton {
+                                    visible: root.view === "playlist_detail"
+                                    icon.name: "edit-rename"
+                                    Controls.ToolTip.visible: hovered
+                                    Controls.ToolTip.text: "Rename playlist"
+                                    Controls.ToolTip.delay: 400
+                                    onClicked: {
+                                        root.renamePlaylistId = root.detailPlaylistId
+                                        renamePlaylistField.text = root.detailName
+                                        renamePlaylistDialog.open()
+                                    }
+                                }
+
+                                Controls.ToolButton {
+                                    visible: root.view === "playlist_detail"
+                                    icon.name: "edit-delete"
+                                    Controls.ToolTip.visible: hovered
+                                    Controls.ToolTip.text: "Delete playlist"
+                                    Controls.ToolTip.delay: 400
+                                    onClicked: {
+                                        library.deletePlaylist(root.detailPlaylistId)
+                                        root.view = "songs"
+                                        root.detailPlaylistId = -1
+                                        root.detailName = ""
+                                    }
                                 }
                             }
 
@@ -904,6 +1114,8 @@ Kirigami.ApplicationWindow {
                                     width: trackList.width
                                     trackData: modelData
                                     trackIndex: index
+                                    playlistsModel: root.playlists
+                                    currentPlaylistId: root.view === "playlist_detail" ? root.detailPlaylistId : -1
                                     isCurrentTrack: {
                                         var title = player.current_title || ""
                                         return title.length > 0
@@ -912,6 +1124,19 @@ Kirigami.ApplicationWindow {
                                     }
                                     onTrackClicked: function(idx) {
                                         player.playFromList(library.results_json, idx)
+                                    }
+                                    onAddToPlaylistRequested: function(trackId, playlistId) {
+                                        library.addToPlaylist(playlistId, trackId)
+                                    }
+                                    onRemoveFromPlaylistRequested: function(trackId, playlistId) {
+                                        library.removeFromPlaylist(playlistId, trackId)
+                                        // Refresh the playlist track list
+                                        library.loadPlaylistTracks(playlistId)
+                                    }
+                                    onNewPlaylistRequested: function(trackId) {
+                                        root._pendingAddTrackId = trackId
+                                        newPlaylistField.text = ""
+                                        newPlaylistDialog.open()
                                     }
                                 }
 
