@@ -50,5 +50,28 @@ target_link_libraries(lyra PRIVATE
     Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::QuickControls2
 )
 
+# GNU ld.bfd link-order fix: cpal pulls in libasound and libpipewire-0.3 via
+# the alsa and pipewire-sys crates. These must appear AFTER liblyra_ui.a in
+# the linker command (GNU ld processes archives left-to-right). Corrosion
+# places them before the archive by default; we add them here so CMake appends
+# them after the archive's Qt deps. A post-configure build.ninja patch (see
+# cmake/fix-link-order.cmake) corrects the remaining ordering issue when using
+# ld.bfd. On systems with mold or lld these flags are unnecessary.
+target_link_libraries(lyra PRIVATE
+    asound
+    pipewire-0.3
+)
+
+# GNU ld.bfd fails with "no more archived files" on large debug archives.
+# Run ranlib before linking to refresh the symbol table index.
+find_program(RANLIB_EXE ranlib REQUIRED)
+add_custom_target(ranlib_lyra_ui ALL
+    COMMAND ${RANLIB_EXE} "${CMAKE_BINARY_DIR}/liblyra_ui.a"
+    DEPENDS cargo-build_lyra_ui
+    COMMENT "ranlib: refreshing symbol table in liblyra_ui.a"
+    VERBATIM
+)
+add_dependencies(lyra ranlib_lyra_ui)
+
 # For statically-linked Qt: scan and pull in QML plugin initialisers.
 qt_import_qml_plugins(lyra)
