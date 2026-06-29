@@ -22,6 +22,8 @@ pub mod qobject {
         #[qproperty(QString, current_artist)]
         #[qproperty(QString, current_cover_thumb)]
         #[qproperty(QString, queue_json)]
+        /// Lyrics for the current track as JSON: `{"synced":bool,"lines":[{"t":number|null,"text":string}]}`.
+        #[qproperty(QString, lyrics_json)]
         /// Current playback position in seconds (updated by `refreshPosition`).
         #[qproperty(f64, position_secs)]
         /// Total duration of the current track in seconds (set when a track starts).
@@ -112,6 +114,8 @@ pub struct PlayerRust {
     current_artist: QString,
     current_cover_thumb: QString,
     queue_json: QString,
+    /// Lyrics for the current track, serialised as JSON.
+    lyrics_json: QString,
 
     /// Current playback position in seconds (polled from the engine).
     position_secs: f64,
@@ -132,6 +136,8 @@ pub struct PlayerRust {
     mpris_handle: Option<MprisHandle>,
 }
 
+const EMPTY_LYRICS_JSON: &str = r#"{"synced":false,"lines":[]}"#;
+
 impl Default for PlayerRust {
     fn default() -> Self {
         Self {
@@ -140,6 +146,7 @@ impl Default for PlayerRust {
             current_artist: QString::from(""),
             current_cover_thumb: QString::from(""),
             queue_json: QString::from("[]"),
+            lyrics_json: QString::from(EMPTY_LYRICS_JSON),
             position_secs: 0.0,
             duration_secs: 0.0,
             engine: None,
@@ -270,6 +277,16 @@ impl qobject::Player {
         true
     }
 
+    /// Load lyrics for `path` and set the `lyrics_json` property.
+    /// On any error, sets the property to the empty-lyrics sentinel.
+    fn load_lyrics(mut self: Pin<&mut Self>, path: &str) {
+        let json = match lyra_metadata::read_lyrics(std::path::Path::new(path)) {
+            Ok(lyrics) => serde_json::to_string(&lyrics).unwrap_or_else(|_| EMPTY_LYRICS_JSON.to_owned()),
+            Err(_) => EMPTY_LYRICS_JSON.to_owned(),
+        };
+        self.as_mut().set_lyrics_json(QString::from(json.as_str()));
+    }
+
     /// Internal: play a path string, update title/artist/cover/state/duration properties.
     fn play_row(
         mut self: Pin<&mut Self>,
@@ -298,6 +315,8 @@ impl qobject::Player {
                 // Reset position and set duration for the new track.
                 self.as_mut().set_position_secs(0.0);
                 self.as_mut().set_duration_secs(duration_ms as f64 / 1000.0);
+                // Load lyrics for the new track (sidecar .lrc or embedded tag).
+                self.as_mut().load_lyrics(path);
                 // Notify MPRIS of the new track and Playing status.
                 self.as_ref().push_mpris_state();
             }
@@ -477,6 +496,7 @@ impl qobject::Player {
         self.as_mut().set_current_title(QString::from(""));
         self.as_mut().set_current_artist(QString::from(""));
         self.as_mut().set_current_cover_thumb(QString::from(""));
+        self.as_mut().set_lyrics_json(QString::from(EMPTY_LYRICS_JSON));
         self.as_mut().set_position_secs(0.0);
         self.as_mut().set_duration_secs(0.0);
         // Notify MPRIS of Stopped status + cleared metadata.
