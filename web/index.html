@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lyra — a music player worth keeping</title>
+<meta name="description" content="Lyra: a Rust-built, KDE-native music player. Beautiful, fast, and hackable — your local library, done right.">
+
+<style>
+  :root{
+    --void:#0b0e13; --deep:#121826; --deep2:#0e1420;
+    --ink:#eef2f7; --mute:#8a97a8; --faint:#5b6675; --line:rgba(255,255,255,.08);
+    --breeze:#3daee9; --breeze-deep:#2b6fa0; --vega:#f0c66b;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",sans-serif;
+    --mono:ui-monospace,"JetBrains Mono","Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --maxw:1080px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--void);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.6;
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 28px}
+  .eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--breeze)}
+  h2{font-family:var(--sans);font-weight:800;letter-spacing:-.02em;line-height:1.05;font-size:clamp(28px,4.6vw,44px);margin:14px 0 0;text-wrap:balance}
+  h3{font-family:var(--sans);font-weight:700;letter-spacing:-.01em;margin:0}
+  p{margin:0}
+  .lede{color:var(--mute);max-width:60ch}
+  .mono{font-family:var(--mono)}
+
+  /* ---------- nav ---------- */
+  nav{position:sticky;top:0;z-index:50;backdrop-filter:blur(10px);background:rgba(11,14,19,.62);border-bottom:1px solid var(--line)}
+  .nav-in{max-width:var(--maxw);margin:0 auto;padding:14px 28px;display:flex;align-items:center;gap:24px}
+  .brand{font-family:var(--mono);font-weight:700;letter-spacing:.02em;font-size:16px;display:flex;align-items:center;gap:9px}
+  .brand .star{width:8px;height:8px;border-radius:50%;background:var(--vega);box-shadow:0 0 10px var(--vega)}
+  .nav-links{margin-left:auto;display:flex;gap:26px;align-items:center}
+  .nav-links a{font-family:var(--mono);font-size:13px;color:var(--mute);transition:color .15s}
+  .nav-links a:hover{color:var(--ink)}
+  .btn{font-family:var(--mono);font-size:13px;font-weight:600;padding:9px 16px;border-radius:8px;border:1px solid transparent;transition:transform .12s,background .15s,border-color .15s;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+  .btn-primary{background:var(--breeze);color:#06141d}
+  .btn-primary:hover{transform:translateY(-1px);background:#5cbef0}
+  .btn-ghost{border-color:var(--line);color:var(--ink)}
+  .btn-ghost:hover{border-color:var(--breeze);color:var(--breeze)}
+  @media(max-width:640px){.nav-links a:not(.btn){display:none}}
+
+  /* ---------- hero ---------- */
+  .hero{position:relative;min-height:88vh;display:flex;align-items:center;overflow:hidden;
+    background:
+      radial-gradient(900px 520px at 72% 12%, rgba(61,174,233,.16), transparent 60%),
+      radial-gradient(700px 460px at 18% 90%, rgba(240,198,107,.08), transparent 55%),
+      linear-gradient(180deg,var(--void),#0a0d12)}
+  #strings{position:absolute;inset:0;width:100%;height:100%;display:block;z-index:0}
+  .hero-in{position:relative;z-index:2;max-width:var(--maxw);margin:0 auto;padding:0 28px;width:100%}
+  .wordmark{font-family:var(--sans);font-weight:800;letter-spacing:-.045em;line-height:.86;
+    font-size:clamp(96px,22vw,260px);margin:10px 0 0;
+    background:linear-gradient(176deg,#ffffff 0%,#cfe6f6 46%,#7fb6d8 72%,var(--vega) 130%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 8px 40px rgba(61,174,233,.18))}
+  .tagline{font-family:var(--serif);font-style:italic;font-size:clamp(20px,3.2vw,30px);color:#dbe5ee;margin-top:6px;max-width:24ch}
+  .hero-sub{margin-top:22px;max-width:54ch;color:var(--mute)}
+  .hero-cta{margin-top:30px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+  .stackline{margin-top:30px;font-family:var(--mono);font-size:12.5px;color:var(--faint);letter-spacing:.02em}
+  .stackline b{color:var(--breeze);font-weight:400}
+
+  /* ---------- generic section ---------- */
+  section{padding:96px 0;position:relative}
+  .sec-head{max-width:62ch}
+
+  /* ---------- promises ---------- */
+  .promises{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin-top:44px}
+  .promise{background:linear-gradient(180deg,var(--deep),var(--deep2));padding:30px 26px 34px}
+  .promise .n{font-family:var(--mono);font-size:12px;color:var(--vega);letter-spacing:.1em}
+  .promise h3{font-size:21px;margin:14px 0 9px}
+  .promise p{font-size:14.5px;color:var(--mute)}
+  .promise .was{display:block;margin-top:14px;font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+  .promise .was s{color:#71391f}
+  @media(max-width:760px){.promises{grid-template-columns:1fr}}
+
+  /* ---------- the app mock ---------- */
+  .showcase{background:linear-gradient(180deg,#0a0d12,var(--void))}
+  .mockframe{margin-top:42px;border:1px solid var(--line);border-radius:16px;overflow:hidden;
+    box-shadow:0 40px 120px rgba(0,0,0,.6), 0 0 0 1px rgba(61,174,233,.06);background:#1b1e20}
+  .mockcap{margin-top:16px;text-align:center;font-family:var(--mono);font-size:12.5px;color:var(--faint)}
+  .mockcap b{color:var(--breeze);font-weight:400}
+  /* breeze-dark mock */
+  .m{ --bg:#1b1e20;--panel:#2a2e32;--view:#232629;--mline:rgba(255,255,255,.07);--mtx:#eff0f1;--mdim:#9aa0a6;
+     background:var(--bg);color:var(--mtx);font-family:var(--sans)}
+  .m *{box-sizing:border-box}
+  .m-top{height:42px;display:flex;align-items:center;gap:10px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--mline)}
+  .m-dot{width:10px;height:10px;border-radius:50%}
+  .m-search{margin-left:6px;flex:1;max-width:240px;height:24px;border-radius:7px;background:rgba(255,255,255,.06)}
+  .m-tag{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--mdim)}
+  .m-body{display:flex;height:330px}
+  .m-side{width:158px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--mline);padding:12px 9px;display:flex;flex-direction:column;gap:4px}
+  .m-nav{height:11px;border-radius:4px;background:rgba(255,255,255,.07)}
+  .m-nav.on{background:var(--breeze);opacity:.9;width:78%}
+  .m-lbl{height:7px;width:50%;border-radius:3px;background:rgba(255,255,255,.04);margin:12px 0 4px}
+  .m-main{flex:1;min-width:0;padding:12px 14px;overflow:hidden}
+  .m-row{display:flex;align-items:center;gap:11px;padding:7px 6px;border-radius:7px}
+  .m-row.play{background:rgba(61,174,233,.13)}
+  .m-art{width:34px;height:34px;border-radius:6px;flex:0 0 auto}
+  .m-tt{height:9px;border-radius:3px;background:rgba(255,255,255,.5);width:46%}
+  .m-row.play .m-tt{background:var(--breeze)}
+  .m-ta{height:7px;border-radius:3px;background:rgba(255,255,255,.16);width:30%;margin-top:5px}
+  .m-time{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--mdim)}
+  .m-np{width:188px;flex:0 0 auto;background:var(--view);border-left:1px solid var(--mline);padding:14px}
+  .m-cover{width:100%;aspect-ratio:1/1;border-radius:10px;background:linear-gradient(135deg,#4facfe,#00f2fe)}
+  .m-nptt{height:11px;width:60%;border-radius:4px;background:var(--breeze);margin-top:13px}
+  .m-npta{height:8px;width:42%;border-radius:3px;background:rgba(255,255,255,.22);margin-top:7px}
+  .m-bar{height:54px;background:var(--panel);border-top:1px solid var(--mline);display:flex;align-items:center;gap:14px;padding:0 16px}
+  .m-ctrl{width:13px;height:13px;border-radius:50%;background:rgba(255,255,255,.25)}
+  .m-ctrl.big{width:30px;height:30px;background:var(--breeze)}
+  .m-seek{flex:1;max-width:300px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);position:relative}
+  .m-seek::after{content:"";position:absolute;left:0;top:0;bottom:0;width:34%;background:var(--breeze);border-radius:2px}
+  @media(max-width:760px){.m-np{display:none}.m-body{height:280px}}
+
+  /* ---------- features ---------- */
+  .feat{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:44px}
+  .f{padding:22px 4px}
+  .f .gl{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--breeze);display:flex;align-items:center;gap:9px}
+  .f .gl::before{content:"";width:18px;height:1px;background:var(--breeze);opacity:.6}
+  .f h3{font-size:17px;margin:12px 0 7px}
+  .f p{font-size:14px;color:var(--mute)}
+  @media(max-width:760px){.feat{grid-template-columns:1fr;gap:6px}}
+
+  /* ---------- stack ---------- */
+  .stack{background:linear-gradient(180deg,var(--void),#0a0d12)}
+  .thesis{font-family:var(--serif);font-style:italic;font-size:clamp(22px,3.4vw,32px);color:#dbe5ee;max-width:20ch;line-height:1.25}
+  .stack-grid{display:grid;grid-template-columns:1.1fr 1fr;gap:48px;align-items:start}
+  .specrows{font-family:var(--mono);font-size:13.5px}
+  .spec{display:flex;justify-content:space-between;gap:16px;padding:13px 0;border-bottom:1px dashed var(--line)}
+  .spec .k{color:var(--mute)}
+  .spec .v{color:var(--ink);text-align:right}
+  .spec .v b{color:var(--vega);font-weight:400}
+  @media(max-width:760px){.stack-grid{grid-template-columns:1fr;gap:28px}}
+
+  /* ---------- closing ---------- */
+  .closing{text-align:center;padding:120px 0}
+  .closing h2{font-size:clamp(34px,6vw,60px)}
+  .closing .hero-cta{justify-content:center;margin-top:34px}
+  footer{border-top:1px solid var(--line);padding:30px 0 56px}
+  .foot-in{max-width:var(--maxw);margin:0 auto;padding:0 28px;display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-family:var(--mono);font-size:12px;color:var(--faint)}
+  .foot-in .brand{font-size:14px;color:var(--ink)}
+  .foot-in .sp{margin-left:auto}
+
+  :focus-visible{outline:2px solid var(--breeze);outline-offset:3px;border-radius:4px}
+  @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+</style>
+
+</head>
+<body>
+<nav>
+  <div class="nav-in">
+    <a class="brand" href="#top"><span class="star" aria-hidden="true"></span>lyra</a>
+    <div class="nav-links">
+      <a href="#promises">Why</a>
+      <a href="#see">The app</a>
+      <a href="#built">How it's built</a>
+      <a class="btn btn-primary" href="#get">Get Lyra</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <canvas id="strings" aria-hidden="true"></canvas>
+  <div class="hero-in">
+    <div class="eyebrow">A local music player for Linux · KDE Plasma</div>
+    <h1 class="wordmark">Lyra</h1>
+    <p class="tagline">A music player worth keeping.</p>
+    <p class="hero-sub">Every Linux player felt like a compromise — ugly, sluggish, or careless with your library. So Lyra is the opposite on purpose: a native Plasma app with a Rust core, your whole collection at your fingertips, and audio handled with intent.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#get">Get Lyra</a>
+      <a class="btn btn-ghost" href="#built">Read how it's built →</a>
+    </div>
+    <p class="stackline"><b>Rust</b> core · <b>QML / Kirigami</b> face · <b>PipeWire</b> out · gapless, ReplayGain, draggable seek</p>
+  </div>
+</header>
+
+<main>
+
+  <!-- WHY -->
+  <section id="promises" class="wrap">
+    <div class="sec-head">
+      <div class="eyebrow">Why it exists</div>
+      <h2>Three frustrations, turned into three promises.</h2>
+      <p class="lede" style="margin-top:16px">Lyra started from a short list of complaints about every other player. Each one became a thing it refuses to get wrong.</p>
+    </div>
+    <div class="promises">
+      <div class="promise">
+        <h3>Beautiful &amp; native</h3>
+        <p>Not a theme that approximates KDE — a real Qt&nbsp;Quick / Kirigami app that <em>is</em> a Plasma app. It inherits your actual Breeze colors, accent, and fonts. Light or dark, it’s already yours.</p>
+        <span class="was">was: <s>ugly, dated, off-brand</s></span>
+      </div>
+      <div class="promise">
+        <h3>Your whole library</h3>
+        <p>A fast scan into a real index, full-text search, and browsing by song, album, artist, or genre — with the album art pulled from your files. Built for a collection, not a playlist.</p>
+        <span class="was">was: <s>slow, shallow, forgetful</s></span>
+      </div>
+      <div class="promise">
+        <h3>The audio, done right</h3>
+        <p>A lock-free real-time engine: gapless playback, ReplayGain loudness, a clean resampler, and a seek bar you can actually drag. Through PipeWire, the way modern Linux audio expects.</p>
+        <span class="was">was: <s>gaps, clicks, fake controls</s></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEE IT -->
+  <section id="see" class="showcase">
+    <div class="wrap">
+      <div class="sec-head">
+        <div class="eyebrow">The app</div>
+        <h2>Sidebar, art, queue, transport — exactly where your hands expect them.</h2>
+      </div>
+      <div class="mockframe">
+        <div class="m">
+          <div class="m-top">
+            <span class="m-dot" style="background:#ed6a5e"></span><span class="m-dot" style="background:#f4bf4f"></span><span class="m-dot" style="background:#61c554"></span>
+            <span class="m-search"></span><span class="m-tag">679 tracks</span>
+          </div>
+          <div class="m-body">
+            <div class="m-side">
+              <div class="m-lbl"></div>
+              <div class="m-nav on"></div><div class="m-nav"></div><div class="m-nav"></div><div class="m-nav"></div>
+              <div class="m-lbl"></div>
+              <div class="m-nav"></div><div class="m-nav"></div>
+            </div>
+            <div class="m-main">
+              <div class="m-row play"><span class="m-art" style="background:linear-gradient(135deg,#4facfe,#00f2fe)"></span><div><div class="m-tt"></div><div class="m-ta"></div></div><span class="m-time">1:24</span></div>
+              <div class="m-row"><span class="m-art" style="background:linear-gradient(135deg,#43e97b,#38f9d7)"></span><div><div class="m-tt"></div><div class="m-ta"></div></div><span class="m-time">3:38</span></div>
+              <div class="m-row"><span class="m-art" style="background:linear-gradient(135deg,#fa709a,#fee140)"></span><div><div class="m-tt"></div><div class="m-ta"></div></div><span class="m-time">2:50</span></div>
+              <div class="m-row"><span class="m-art" style="background:linear-gradient(135deg,#a18cd1,#fbc2eb)"></span><div><div class="m-tt"></div><div class="m-ta"></div></div><span class="m-time">4:02</span></div>
+              <div class="m-row"><span class="m-art" style="background:linear-gradient(135deg,#30cfd0,#330867)"></span><div><div class="m-tt"></div><div class="m-ta"></div></div><span class="m-time">3:12</span></div>
+              <div class="m-row"><span class="m-art" style="background:linear-gradient(135deg,#f6d365,#fda085)"></span><div><div class="m-tt"></div><div class="m-ta"></div></div><span class="m-time">2:49</span></div>
+            </div>
+            <div class="m-np">
+              <div class="m-cover"></div>
+              <div class="m-nptt"></div><div class="m-npta"></div>
+            </div>
+          </div>
+          <div class="m-bar">
+            <span class="m-art" style="width:34px;height:34px;background:linear-gradient(135deg,#4facfe,#00f2fe)"></span>
+            <span class="m-ctrl"></span><span class="m-ctrl big"></span><span class="m-ctrl"></span>
+            <span class="m-seek"></span><span class="m-time">3:42</span>
+          </div>
+        </div>
+      </div>
+      <p class="mockcap">Layout that follows your <b>Breeze</b> theme · album art from your own files · a transport you can drive</p>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="wrap">
+    <div class="sec-head">
+      <div class="eyebrow">In the box</div>
+      <h2>Everything a daily driver needs.</h2>
+    </div>
+    <div class="feat">
+      <div class="f"><div class="gl">Playback</div><h3>Gapless &amp; clean</h3><p>Continuous album playback, ReplayGain normalization, and a persistent resampler — no clicks between tracks or after a seek.</p></div>
+      <div class="f"><div class="gl">Transport</div><h3>Draggable seek</h3><p>A live position bar you can actually scrub, with sample-accurate playback on a lock-free real-time thread.</p></div>
+      <div class="f"><div class="gl">Library</div><h3>Browse &amp; search</h3><p>Songs, albums, artists, and genres — full-text search across the lot, indexed for tens of thousands of tracks.</p></div>
+      <div class="f"><div class="gl">Desktop</div><h3>Media keys</h3><p>MPRIS means your keyboard play/pause/next keys, the lock screen, and Plasma’s Now-Playing applet just work.</p></div>
+      <div class="f"><div class="gl">Now playing</div><h3>Synced lyrics</h3><p>Drop an <span class="mono">.lrc</span> beside a track and the current line highlights and scrolls in time with the music.</p></div>
+      <div class="f"><div class="gl">Yours</div><h3>Open &amp; hackable</h3><p>A clean Rust workspace with a source-plugin architecture — podcasts, radio, and self-hosted libraries are designed to slot in.</p></div>
+    </div>
+  </section>
+
+  <!-- HOW IT'S BUILT -->
+  <section id="built" class="stack">
+    <div class="wrap stack-grid">
+      <div>
+        <div class="eyebrow">How it's built</div>
+        <p class="thesis">“Rust brain, Qt face.”</p>
+        <p class="lede" style="margin-top:18px">Every line of logic is Rust — the engine, the library, the metadata. The interface is a thin QML/Kirigami skin bridged through CXX-Qt, so it looks native because it <em>is</em> native. A real-time audio thread pulls from a lock-free ring buffer; nothing blocks the UI, and nothing stutters the sound.</p>
+      </div>
+      <div class="specrows" aria-label="Technology stack">
+        <div class="spec"><span class="k">UI</span><span class="v"><b>QML · Kirigami</b> via CXX-Qt</span></div>
+        <div class="spec"><span class="k">Core</span><span class="v"><b>Rust</b> · async + RT thread</span></div>
+        <div class="spec"><span class="k">Decode</span><span class="v">symphonia</span></div>
+        <div class="spec"><span class="k">Output</span><span class="v"><b>cpal → PipeWire</b></span></div>
+        <div class="spec"><span class="k">Loudness / DSP</span><span class="v">ebur128 · biquad · rubato</span></div>
+        <div class="spec"><span class="k">Library</span><span class="v"><b>SQLite</b> + FTS5</span></div>
+        <div class="spec"><span class="k">Desktop</span><span class="v">MPRIS2 (D-Bus)</span></div>
+        <div class="spec"><span class="k">Target</span><span class="v">KDE Plasma 6 · Wayland</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSING -->
+  <section id="get" class="closing wrap">
+    <div class="eyebrow">Get Lyra</div>
+    <h2>Stop settling for the music player you tolerate.</h2>
+    <p class="lede" style="margin:18px auto 0;text-align:center">Built for KDE Plasma 6 on Wayland. Clone it, build it, point it at <span class="mono">~/Music</span>, and press play.</p>
+    <div class="hero-cta">
+      <a class="btn btn-primary" href="#top">Build from source</a>
+      <a class="btn btn-ghost" href="#built">See the stack →</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="foot-in">
+    <span class="brand"><span class="star" aria-hidden="true" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--vega)"></span>lyra</span>
+    <span>· a music player worth keeping</span>
+    <span class="sp">Rust · KDE · PipeWire — made on Linux, for Linux</span>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var c=document.getElementById('strings'); if(!c) return;
+  var ctx=c.getContext('2d'), dpr=Math.min(window.devicePixelRatio||1,2), W=0,H=0;
+  var reduce=window.matchMedia&&window.matchMedia('(prefers-reduced-motion:reduce)').matches;
+  // Lyra constellation (Vega + parallelogram), normalized in a box placed top-right.
+  var lyra=[{x:0.50,y:0.05,vega:true},{x:0.39,y:0.33},{x:0.63,y:0.40},{x:0.67,y:0.74},{x:0.43,y:0.67}];
+  var edges=[[0,1],[1,2],[2,3],[3,4],[4,1]];
+  var stars=[], BARS=64;
+  function resize(){
+    W=c.clientWidth;H=c.clientHeight;c.width=W*dpr;c.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+    stars=[];var n=Math.round(W*H/13000);
+    for(var i=0;i<n;i++)stars.push({x:Math.random()*W,y:Math.random()*H*0.7,r:Math.random()*1.0+0.2,b:Math.random()*0.4+0.15,s:Math.random()*0.6+0.2,t:Math.random()*6.28});
+  }
+  function cpos(p){var bw=Math.min(W*0.28,300),bh=bw*1.18,ox=W-bw-Math.max(W*0.07,30),oy=Math.max(H*0.08,30);return{x:ox+p.x*bw,y:oy+p.y*bh};}
+  // colour helper: blend breeze->vega across the bar field
+  function barColor(f){ // f 0..1 left->right
+    var r=Math.round(61+(240-61)*f), g=Math.round(174+(198-174)*f), b=Math.round(233+(107-233)*f);
+    return 'rgb('+r+','+g+','+b+')';
+  }
+  function draw(time){
+    ctx.clearRect(0,0,W,H);
+    // starfield
+    for(var i=0;i<stars.length;i++){var s=stars[i];var tw=reduce?s.b:s.b*(0.6+0.4*Math.sin(time*0.001*s.s+s.t));
+      ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,6.2832);ctx.fillStyle='rgba(200,220,235,'+tw.toFixed(3)+')';ctx.fill();}
+    // constellation
+    ctx.lineWidth=1;ctx.strokeStyle='rgba(61,174,233,0.18)';
+    for(var e=0;e<edges.length;e++){var a=cpos(lyra[edges[e][0]]),b=cpos(lyra[edges[e][1]]);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+    for(var k=0;k<lyra.length;k++){var p=cpos(lyra[k]);
+      if(lyra[k].vega){var pul=reduce?1:(0.8+0.2*Math.sin(time*0.0016));var g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,15*pul);
+        g.addColorStop(0,'rgba(240,198,107,.95)');g.addColorStop(.5,'rgba(240,198,107,.22)');g.addColorStop(1,'rgba(240,198,107,0)');
+        ctx.fillStyle=g;ctx.beginPath();ctx.arc(p.x,p.y,15*pul,0,6.2832);ctx.fill();
+        ctx.fillStyle='#f6d89a';ctx.beginPath();ctx.arc(p.x,p.y,2.4,0,6.2832);ctx.fill();
+      }else{ctx.fillStyle='rgba(180,214,234,.85)';ctx.beginPath();ctx.arc(p.x,p.y,1.7,0,6.2832);ctx.fill();}
+    }
+    // lyre-strings / equalizer along the bottom
+    var base=H, gap=W/BARS, maxh=Math.min(H*0.52,360);
+    for(var i=0;i<BARS;i++){
+      var f=i/(BARS-1);
+      var phase=i*0.30;
+      // layered sines -> organic spectrum; static-ish if reduced
+      var amp = reduce
+        ? (0.20+0.55*Math.pow(Math.sin(f*Math.PI),0.8)*(0.5+0.5*Math.sin(i*1.7)))
+        : (0.16+0.5*Math.abs(Math.sin(time*0.0013+phase))*Math.pow(Math.sin(f*Math.PI+0.15),0.7)
+              +0.18*Math.abs(Math.sin(time*0.0031+phase*1.7)));
+      var h=Math.min(maxh, amp*maxh);
+      var x=i*gap+gap*0.5;
+      var grad=ctx.createLinearGradient(0,base-h,0,base);
+      grad.addColorStop(0,barColor(f));
+      grad.addColorStop(1,'rgba(61,174,233,0.02)');
+      ctx.strokeStyle=grad;ctx.lineWidth=Math.max(1.5,gap*0.34);ctx.globalAlpha=0.55;
+      ctx.beginPath();ctx.moveTo(x,base);ctx.lineTo(x,base-h);ctx.stroke();
+      // bright tip node
+      ctx.globalAlpha=0.9;ctx.fillStyle=barColor(f);ctx.beginPath();ctx.arc(x,base-h,Math.max(1.4,gap*0.18),0,6.2832);ctx.fill();
+      ctx.globalAlpha=1;
+    }
+  }
+  function loop(t){draw(t);if(!reduce)requestAnimationFrame(loop);}
+  resize();if(reduce){draw(0);}else{requestAnimationFrame(loop);}
+  var rt;window.addEventListener('resize',function(){clearTimeout(rt);rt=setTimeout(function(){resize();if(reduce)draw(0);},150);});
+})();
+</script>
+
+</body>
+</html>
