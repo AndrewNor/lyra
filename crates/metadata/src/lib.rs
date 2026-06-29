@@ -2,9 +2,11 @@
 
 mod tags;
 mod cover;
+mod lyrics;
 
 pub use tags::{tags_from_tag, TrackTags};
 pub use cover::{Cover, read_cover, write_cover};
+pub use lyrics::{LyricLine, Lyrics, parse_lrc};
 
 use std::path::Path;
 
