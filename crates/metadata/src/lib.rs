@@ -6,7 +6,7 @@ mod lyrics;
 
 pub use tags::{tags_from_tag, TrackTags};
 pub use cover::{Cover, read_cover, write_cover};
-pub use lyrics::{LyricLine, Lyrics, parse_lrc};
+pub use lyrics::{LyricLine, Lyrics, parse_lrc, read_lyrics};
 
 use std::path::Path;
 

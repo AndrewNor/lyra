@@ -1,12 +1,14 @@
 /// One line of lyrics, optionally timestamped.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct LyricLine {
+    /// Timestamp in seconds, or None for unsynced lines.
+    #[serde(rename = "t")]
     pub t_secs: Option<f64>,
     pub text: String,
 }
 
 /// A full set of lyrics: either synced (from .lrc) or unsynced (embedded).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Lyrics {
     pub synced: bool,
     pub lines: Vec<LyricLine>,
@@ -113,6 +115,58 @@ pub fn parse_lrc(text: &str) -> Vec<LyricLine> {
     result
 }
 
+/// Read lyrics for the audio file at `path`.
+///
+/// Resolution order:
+/// 1. Sidecar `.lrc` file (same name, extension replaced with `lrc`).
+///    If it exists and parses to at least one line → `Lyrics { synced: true, … }`.
+/// 2. Embedded unsynced lyrics tag (lofty `Lyrics` / `UnsyncLyrics` item keys).
+///    If present → `Lyrics { synced: false, … }` with one `LyricLine` per text line.
+/// 3. Otherwise → `Lyrics { synced: false, lines: [] }`.
+///
+/// Never panics; I/O and parse errors are handled gracefully.
+pub fn read_lyrics(path: &std::path::Path) -> crate::Result<Lyrics> {
+    // ── 1. Sidecar .lrc ──────────────────────────────────────────────────────
+    let lrc_path = path.with_extension("lrc");
+    if lrc_path.exists() {
+        let text = std::fs::read_to_string(&lrc_path)?;
+        let lines = parse_lrc(&text);
+        if !lines.is_empty() {
+            return Ok(Lyrics { synced: true, lines });
+        }
+    }
+
+    // ── 2. Embedded tag ───────────────────────────────────────────────────────
+    use lofty::prelude::TaggedFileExt;
+    use lofty::tag::ItemKey;
+
+    // read_from_path is fallible; on error skip to empty result.
+    let embedded = (|| -> Option<String> {
+        let tagged = lofty::read_from_path(path).ok()?;
+        let tag = tagged.primary_tag().or_else(|| tagged.first_tag())?;
+        // Try the generic Lyrics key first (works for Vorbis/FLAC/APEv2/MP4).
+        if let Some(s) = tag.get_string(ItemKey::Lyrics) {
+            return Some(s.to_owned());
+        }
+        // Fallback to unsynchronised lyrics (ID3v2 USLT).
+        tag.get_string(ItemKey::UnsyncLyrics).map(|s| s.to_owned())
+    })();
+
+    if let Some(text) = embedded {
+        let lines: Vec<LyricLine> = text
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| LyricLine { t_secs: None, text: l.to_owned() })
+            .collect();
+        if !lines.is_empty() {
+            return Ok(Lyrics { synced: false, lines });
+        }
+    }
+
+    // ── 3. Nothing found ──────────────────────────────────────────────────────
+    Ok(Lyrics { synced: false, lines: vec![] })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -191,5 +245,25 @@ mod tests {
         let lines = parse_lrc(lrc);
         assert_eq!(lines.len(), 1);
         assert!((lines[0].t_secs.unwrap() - 45.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn read_lyrics_sidecar_lrc() {
+        // Write a temp audio file path and a sidecar .lrc next to it.
+        let dir = tempfile::tempdir().expect("tmp dir");
+        let audio_path = dir.path().join("song.mp3");
+        // The audio file need not actually exist for sidecar detection;
+        // read_lyrics checks lrc_path.exists() independently.
+        let lrc_path = dir.path().join("song.lrc");
+        let lrc_content = "[00:01.00]Hello world\n[00:05.50]Goodbye";
+        std::fs::write(&lrc_path, lrc_content).expect("write lrc");
+
+        let lyrics = read_lyrics(&audio_path).expect("read_lyrics");
+        assert!(lyrics.synced, "expected synced=true for .lrc sidecar");
+        assert_eq!(lyrics.lines.len(), 2);
+        assert_eq!(lyrics.lines[0].text, "Hello world");
+        assert!((lyrics.lines[0].t_secs.unwrap() - 1.0).abs() < 0.01);
+        assert_eq!(lyrics.lines[1].text, "Goodbye");
+        assert!((lyrics.lines[1].t_secs.unwrap() - 5.5).abs() < 0.01);
     }
 }
