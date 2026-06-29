@@ -139,6 +139,7 @@ impl qobject::Library {
         match tracks_result {
             Ok(tracks) => {
                 let count = tracks.len() as i32;
+                eprintln!("[lyra] load_all: {} tracks loaded", count);
                 let json = tracks_to_json(&tracks);
                 self.as_mut().set_results_json(QString::from(json.as_str()));
                 self.as_mut().set_track_count(count);
@@ -146,6 +147,7 @@ impl qobject::Library {
                 self.as_mut().set_status_text(QString::from(msg.as_str()));
             }
             Err(e) => {
+                eprintln!("[lyra] load_all error: {e}");
                 let msg = format!("loadAll error: {e}");
                 self.as_mut().set_status_text(QString::from(msg.as_str()));
             }

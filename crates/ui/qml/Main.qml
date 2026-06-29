@@ -16,10 +16,11 @@ Kirigami.ApplicationWindow {
 
     Component.onCompleted: library.loadAll()
 
-    // ── Parsed track list — re-evaluated whenever resultsJson changes ─────────
+    // ── Parsed track list — re-evaluated whenever results_json changes ───────
+    // cxx-qt exposes properties in snake_case; use library.results_json (not camelCase).
     // Guard against undefined (during construction) or empty/invalid JSON.
     property var tracks: {
-        var s = library.resultsJson
+        var s = library.results_json
         if (!s || s.length === 0) return []
         try { return JSON.parse(s) } catch(e) { return [] }
     }
@@ -35,8 +36,8 @@ Kirigami.ApplicationWindow {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: {
-                    var t = player.currentTitle || ""
-                    var a = player.currentArtist || ""
+                    var t = player.current_title || ""
+                    var a = player.current_artist || ""
                     if (t.length === 0 && a.length === 0) return "(nothing playing)"
                     if (t.length === 0) return a
                     if (a.length === 0) return t
@@ -45,7 +46,7 @@ Kirigami.ApplicationWindow {
             }
 
             Controls.Label {
-                text: player.stateText || "Stopped"
+                text: player.state_text || "Stopped"
                 color: Kirigami.Theme.disabledTextColor
             }
 
@@ -106,7 +107,7 @@ Kirigami.ApplicationWindow {
                     Layout.bottomMargin: Kirigami.Units.smallSpacing
                     color: Kirigami.Theme.disabledTextColor
                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
-                    text: (library.statusText || "") + "   ·   " + (library.trackCount || 0) + " tracks"
+                    text: (library.status_text || "") + "   ·   " + (library.track_count || 0) + " tracks"
                 }
             }
 
