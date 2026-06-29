@@ -34,6 +34,12 @@ pub mod qobject {
         #[qproperty(bool, shuffle)]
         /// Current repeat mode: "off", "all", or "one".
         #[qproperty(QString, repeat_mode)]
+        /// Whether the graphic equalizer is enabled.
+        #[qproperty(bool, eq_enabled)]
+        /// JSON array of EQ bands: `[{"freq":31,"gain":0.0},…]` (10 entries).
+        #[qproperty(QString, eq_bands_json)]
+        /// Whether bit-perfect mode is active.
+        #[qproperty(bool, bit_perfect)]
         type Player = super::PlayerRust;
 
         /// Initialise the MPRIS2 D-Bus server.  Call once from QML
@@ -101,6 +107,26 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "cycleRepeat"]
         fn cycle_repeat(self: Pin<&mut Player>);
+
+        /// Enable or disable the graphic equalizer.
+        #[qinvokable]
+        #[cxx_name = "setEqEnabled"]
+        fn set_eq_enabled_invokable(self: Pin<&mut Player>, enabled: bool);
+
+        /// Set the gain (in dB, −12..+12) for one EQ band (0-based index).
+        #[qinvokable]
+        #[cxx_name = "setEqGain"]
+        fn set_eq_gain_invokable(self: Pin<&mut Player>, band: i32, db: f64);
+
+        /// Reset all EQ bands to 0 dB.
+        #[qinvokable]
+        #[cxx_name = "resetEq"]
+        fn reset_eq_invokable(self: Pin<&mut Player>);
+
+        /// Enable or disable bit-perfect mode.
+        #[qinvokable]
+        #[cxx_name = "setBitPerfect"]
+        fn set_bit_perfect_invokable(self: Pin<&mut Player>, enabled: bool);
     }
 
     impl cxx_qt::Threading for Player {}
@@ -110,10 +136,27 @@ use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use lyra_core::{PlayQueue, RepeatMode};
-use lyra_engine::Engine;
+use lyra_engine::{Engine, EQ_FREQS_HZ};
 use mpris_server::PlaybackStatus;
 
 use crate::mpris::{MprisHandle, MprisState};
+
+/// Build the `eq_bands_json` string from a gains array.
+fn build_eq_bands_json(gains: &[f32; 10]) -> String {
+    let mut out = String::from("[");
+    for (i, (&freq, &gain)) in EQ_FREQS_HZ.iter().zip(gains.iter()).enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        // Use integer frequency labels; gains to 2 decimal places.
+        out.push_str(&format!(
+            r#"{{"freq":{},"gain":{:.2}}}"#,
+            freq as u32, gain
+        ));
+    }
+    out.push(']');
+    out
+}
 
 // ── Row type for the cached playlist ────────────────────────────────────────
 
@@ -164,12 +207,25 @@ pub struct PlayerRust {
 
     /// MPRIS2 server handle — initialised once from QML via `initMpris`.
     mpris_handle: Option<MprisHandle>,
+
+    /// Whether the graphic EQ is enabled.
+    eq_enabled: bool,
+
+    /// JSON representation of the 10 EQ bands (freq + gain per band).
+    eq_bands_json: QString,
+
+    /// Whether bit-perfect mode is active.
+    bit_perfect: bool,
+
+    /// Persisted EQ gains (applied to the engine when it's lazily created).
+    eq_gains: [f32; 10],
 }
 
 const EMPTY_LYRICS_JSON: &str = r#"{"synced":false,"lines":[]}"#;
 
 impl Default for PlayerRust {
     fn default() -> Self {
+        let default_gains = [0.0f32; 10];
         Self {
             state_text: QString::from("Stopped"),
             current_title: QString::from(""),
@@ -186,6 +242,10 @@ impl Default for PlayerRust {
             play_queue: PlayQueue::new(),
             playlist: Vec::new(),
             mpris_handle: None,
+            eq_enabled: false,
+            eq_bands_json: QString::from(build_eq_bands_json(&default_gains).as_str()),
+            bit_perfect: false,
+            eq_gains: default_gains,
         }
     }
 }
@@ -300,8 +360,13 @@ impl qobject::Player {
             match Engine::new() {
                 Ok(e) => {
                     let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
-                    // Apply the stored volume so it persists across tracks.
+                    // Apply stored settings so they persist across tracks.
                     e.set_volume(r.volume as f32);
+                    e.set_eq_enabled(r.eq_enabled);
+                    for (i, &gain) in r.eq_gains.iter().enumerate() {
+                        e.set_eq_gain(i, gain);
+                    }
+                    e.set_bit_perfect(r.bit_perfect);
                     r.engine = Some(e);
                 }
                 Err(e) => {
@@ -606,5 +671,56 @@ impl qobject::Player {
             }
         };
         self.as_mut().set_repeat_mode(QString::from(new_mode_str));
+    }
+
+    fn set_eq_enabled_invokable(mut self: Pin<&mut Self>, enabled: bool) {
+        {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.eq_enabled = enabled;
+            if let Some(e) = r.engine.as_ref() {
+                e.set_eq_enabled(enabled);
+            }
+        }
+        self.as_mut().set_eq_enabled(enabled);
+    }
+
+    fn set_eq_gain_invokable(mut self: Pin<&mut Self>, band: i32, db: f64) {
+        if band < 0 || band >= 10 {
+            return;
+        }
+        let band_usize = band as usize;
+        let db_f32 = db as f32;
+        let new_json = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.eq_gains[band_usize] = db_f32.clamp(-12.0, 12.0);
+            if let Some(e) = r.engine.as_ref() {
+                e.set_eq_gain(band_usize, db_f32);
+            }
+            build_eq_bands_json(&r.eq_gains)
+        };
+        self.as_mut().set_eq_bands_json(QString::from(new_json.as_str()));
+    }
+
+    fn reset_eq_invokable(mut self: Pin<&mut Self>) {
+        let new_json = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.eq_gains = [0.0; 10];
+            if let Some(e) = r.engine.as_ref() {
+                e.reset_eq();
+            }
+            build_eq_bands_json(&r.eq_gains)
+        };
+        self.as_mut().set_eq_bands_json(QString::from(new_json.as_str()));
+    }
+
+    fn set_bit_perfect_invokable(mut self: Pin<&mut Self>, enabled: bool) {
+        {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.bit_perfect = enabled;
+            if let Some(e) = r.engine.as_ref() {
+                e.set_bit_perfect(enabled);
+            }
+        }
+        self.as_mut().set_bit_perfect(enabled);
     }
 }

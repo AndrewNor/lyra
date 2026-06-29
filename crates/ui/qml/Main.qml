@@ -315,6 +315,17 @@ Kirigami.ApplicationWindow {
                 Controls.ToolTip.text: root.nowPlayingVisible ? "Hide Now Playing panel" : "Show Now Playing panel"
                 Controls.ToolTip.delay: 600
             }
+
+            Controls.ToolButton {
+                icon.name: "configure"
+                checkable: false
+                highlighted: root.view === "settings"
+                icon.color: root.view === "settings" ? root.accentColor : Kirigami.Theme.textColor
+                onClicked: root.view = root.view === "settings" ? "songs" : "settings"
+                Controls.ToolTip.visible: hovered
+                Controls.ToolTip.text: "Settings"
+                Controls.ToolTip.delay: 600
+            }
         }
     }
 
@@ -1287,6 +1298,360 @@ Kirigami.ApplicationWindow {
                             text: "No artists found"
                             explanation: "Click Scan to index your music library."
                             icon.name: "user-identity"
+                        }
+                    }
+                }
+
+                // ── Settings view ────────────────────────────────────────────
+                Item {
+                    anchors.fill: parent
+                    visible: root.view === "settings"
+                    clip: true
+
+                    Flickable {
+                        id: settingsFlickable
+                        anchors.fill: parent
+                        contentWidth: width
+                        contentHeight: settingsColumn.implicitHeight + 40
+                        clip: true
+
+                        Controls.ScrollBar.vertical: Controls.ScrollBar {
+                            policy: Controls.ScrollBar.AsNeeded
+                        }
+
+                        ColumnLayout {
+                            id: settingsColumn
+                            width: Math.min(settingsFlickable.width, 740)
+                            anchors.horizontalCenter: parent.horizontalCenter
+                            anchors.top: parent.top
+                            anchors.topMargin: 28
+                            spacing: 0
+
+                            // ── Section: Equalizer ───────────────────────────
+                            Item {
+                                Layout.fillWidth: true
+                                Layout.bottomMargin: 24
+                                implicitHeight: eqSectionCol.implicitHeight
+
+                                ColumnLayout {
+                                    id: eqSectionCol
+                                    anchors.fill: parent
+                                    spacing: 0
+
+                                    // Section header
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.bottomMargin: 14
+                                        spacing: 14
+
+                                        Rectangle {
+                                            width: 4
+                                            height: 22
+                                            radius: 2
+                                            color: root.accentColor
+                                        }
+
+                                        Controls.Label {
+                                            text: "Equalizer"
+                                            font.bold: true
+                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.10
+                                            color: root.textPrimary
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        Controls.Label {
+                                            text: "Enable"
+                                            color: root.textDim
+                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.88
+                                            verticalAlignment: Text.AlignVCenter
+                                        }
+
+                                        Controls.Switch {
+                                            id: eqSwitch
+                                            checked: player.eq_enabled
+                                            onToggled: player.setEqEnabled(checked)
+                                        }
+                                    }
+
+                                    // EQ sliders card
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: eqCardContent.implicitHeight + 24
+                                        radius: 12
+                                        color: Qt.rgba(1, 1, 1, 0.04)
+
+                                        // Card border
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: parent.radius
+                                            color: "transparent"
+                                            border.color: Qt.rgba(1, 1, 1, 0.07)
+                                            border.width: 1
+                                        }
+
+                                        ColumnLayout {
+                                            id: eqCardContent
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.top: parent.top
+                                            anchors.margins: 16
+                                            spacing: 8
+
+                                            // 10 vertical EQ band sliders
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 0
+
+                                                property var eqBands: {
+                                                    var s = player.eq_bands_json
+                                                    if (!s || s.length === 0) return []
+                                                    try { return JSON.parse(s) } catch(e) { return [] }
+                                                }
+
+                                                Repeater {
+                                                    model: parent.eqBands.length > 0 ? parent.eqBands : 10
+
+                                                    delegate: ColumnLayout {
+                                                        required property int index
+                                                        Layout.fillWidth: true
+                                                        spacing: 4
+                                                        opacity: player.eq_enabled ? 1.0 : 0.38
+
+                                                        Behavior on opacity { NumberAnimation { duration: 120 } }
+
+                                                        // Gain label (+12 / 0 / -12)
+                                                        Controls.Label {
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            text: {
+                                                                var bands = parent.parent.parent.eqBands
+                                                                if (!bands || !bands[index]) return "0"
+                                                                var g = bands[index].gain
+                                                                if (Math.abs(g) < 0.05) return "0"
+                                                                return (g > 0 ? "+" : "") + g.toFixed(1)
+                                                            }
+                                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
+                                                            color: {
+                                                                var bands = parent.parent.parent.eqBands
+                                                                if (!bands || !bands[index]) return root.textFaint
+                                                                var g = bands[index].gain
+                                                                if (Math.abs(g) < 0.05) return root.textFaint
+                                                                return g > 0 ? root.accentColor : Qt.rgba(1, 0.4, 0.4, 0.9)
+                                                            }
+                                                        }
+
+                                                        // Vertical slider
+                                                        Controls.Slider {
+                                                            id: eqSlider
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            orientation: Qt.Vertical
+                                                            implicitHeight: 130
+                                                            implicitWidth: 28
+                                                            from: -12
+                                                            to: 12
+                                                            stepSize: 0.5
+                                                            enabled: player.eq_enabled
+                                                            value: {
+                                                                var bands = parent.parent.parent.eqBands
+                                                                if (!bands || !bands[index]) return 0
+                                                                return bands[index].gain
+                                                            }
+
+                                                            onMoved: player.setEqGain(index, value)
+
+                                                            background: Rectangle {
+                                                                x: eqSlider.leftPadding + eqSlider.availableWidth / 2 - width / 2
+                                                                y: eqSlider.topPadding
+                                                                width: 3
+                                                                height: eqSlider.availableHeight
+                                                                radius: 2
+                                                                color: Qt.rgba(1, 1, 1, 0.12)
+
+                                                                // Filled portion (from center = 0 dB)
+                                                                Rectangle {
+                                                                    property real centerY: parent.height * 0.5
+                                                                    property real fillY: eqSlider.visualPosition * parent.height
+                                                                    y: Math.min(centerY, fillY)
+                                                                    height: Math.abs(centerY - fillY)
+                                                                    width: parent.width
+                                                                    radius: 2
+                                                                    color: {
+                                                                        var bands = parent.parent.parent.parent.parent.eqBands
+                                                                        if (!bands || !bands[index]) return root.accentColor
+                                                                        return bands[index].gain >= 0 ? root.accentColor : Qt.rgba(1, 0.4, 0.4, 0.85)
+                                                                    }
+                                                                }
+
+                                                                // Center tick mark (0 dB)
+                                                                Rectangle {
+                                                                    y: parent.height / 2 - height / 2
+                                                                    x: -2
+                                                                    width: 7
+                                                                    height: 1
+                                                                    color: Qt.rgba(1, 1, 1, 0.25)
+                                                                }
+                                                            }
+
+                                                            handle: Rectangle {
+                                                                x: eqSlider.leftPadding + eqSlider.availableWidth / 2 - width / 2
+                                                                y: eqSlider.topPadding + eqSlider.visualPosition * (eqSlider.availableHeight - height)
+                                                                width: eqSlider.pressed || eqSlider.hovered ? 16 : 12
+                                                                height: width
+                                                                radius: width / 2
+                                                                color: "white"
+
+                                                                Rectangle {
+                                                                    anchors.centerIn: parent
+                                                                    width: parent.width + 8
+                                                                    height: parent.height + 8
+                                                                    radius: (parent.width + 8) / 2
+                                                                    color: root.accentColor
+                                                                    opacity: 0.25
+                                                                    z: -1
+                                                                }
+
+                                                                Behavior on width  { NumberAnimation { duration: 80 } }
+                                                                Behavior on height { NumberAnimation { duration: 80 } }
+                                                            }
+                                                        }
+
+                                                        // Frequency label
+                                                        Controls.Label {
+                                                            Layout.alignment: Qt.AlignHCenter
+                                                            text: {
+                                                                var bands = parent.parent.parent.eqBands
+                                                                if (!bands || !bands[index]) return ""
+                                                                var f = bands[index].freq
+                                                                if (f >= 1000) return (f / 1000) + "k"
+                                                                return f
+                                                            }
+                                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
+                                                            color: root.textDim
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Reset button row
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                Item { Layout.fillWidth: true }
+                                                Controls.Button {
+                                                    text: "Reset"
+                                                    enabled: player.eq_enabled
+                                                    opacity: player.eq_enabled ? 1.0 : 0.38
+                                                    flat: true
+                                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                                    onClicked: player.resetEq()
+
+                                                    Behavior on opacity { NumberAnimation { duration: 120 } }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Separator
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height: 1
+                                color: root.sepColor
+                                Layout.bottomMargin: 24
+                            }
+
+                            // ── Section: Audio Quality ───────────────────────
+                            Item {
+                                Layout.fillWidth: true
+                                implicitHeight: qualitySectionCol.implicitHeight
+
+                                ColumnLayout {
+                                    id: qualitySectionCol
+                                    anchors.fill: parent
+                                    spacing: 0
+
+                                    // Section header
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        Layout.bottomMargin: 14
+                                        spacing: 14
+
+                                        Rectangle {
+                                            width: 4
+                                            height: 22
+                                            radius: 2
+                                            color: root.accentColor
+                                        }
+
+                                        Controls.Label {
+                                            text: "Audio Quality"
+                                            font.bold: true
+                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.10
+                                            color: root.textPrimary
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+                                    }
+
+                                    // Bit-perfect card
+                                    Rectangle {
+                                        Layout.fillWidth: true
+                                        implicitHeight: bitPerfectRow.implicitHeight + 24
+                                        radius: 12
+                                        color: Qt.rgba(1, 1, 1, 0.04)
+
+                                        Rectangle {
+                                            anchors.fill: parent
+                                            radius: parent.radius
+                                            color: "transparent"
+                                            border.color: player.bit_perfect
+                                                          ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.35)
+                                                          : Qt.rgba(1, 1, 1, 0.07)
+                                            border.width: 1
+
+                                            Behavior on border.color { ColorAnimation { duration: 200 } }
+                                        }
+
+                                        RowLayout {
+                                            id: bitPerfectRow
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.verticalCenter: parent.verticalCenter
+                                            anchors.margins: 16
+                                            spacing: 16
+
+                                            ColumnLayout {
+                                                Layout.fillWidth: true
+                                                spacing: 4
+
+                                                Controls.Label {
+                                                    text: "Bit-perfect output"
+                                                    font.bold: true
+                                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.95
+                                                    color: root.textPrimary
+                                                }
+
+                                                Controls.Label {
+                                                    Layout.fillWidth: true
+                                                    text: "Bypass the equalizer and resampling for unaltered output."
+                                                    color: root.textDim
+                                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                                    wrapMode: Text.WordWrap
+                                                }
+                                            }
+
+                                            Controls.Switch {
+                                                id: bitPerfectSwitch
+                                                checked: player.bit_perfect
+                                                onToggled: player.setBitPerfect(checked)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Bottom spacer
+                            Item { implicitHeight: 32 }
                         }
                     }
                 }
