@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 
 use async_channel::{Receiver, Sender};
 use mpris_server::{
-    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, Property, Server, Time, TrackId,
+    LoopStatus, Metadata, PlaybackRate, PlaybackStatus, Property, Server, Signal, Time, TrackId,
     zbus::fdo,
 };
 
@@ -41,6 +41,9 @@ pub struct MprisState {
     pub duration_us: i64,
     /// Playback position in microseconds.
     pub position_us: i64,
+    /// When Some, the MPRIS loop should emit a Seeked signal with this position
+    /// (microseconds) and then reset to None.
+    pub seeked_to_us: Option<i64>,
 }
 
 impl Default for MprisState {
@@ -52,6 +55,7 @@ impl Default for MprisState {
             cover_path: String::new(),
             duration_us: 0,
             position_us: 0,
+            seeked_to_us: None,
         }
     }
 }
@@ -79,6 +83,16 @@ impl MprisHandle {
         // the next update will carry the latest state anyway.
         let _ = self.trigger.try_send(());
     }
+
+    /// Signal the MPRIS thread that a seek happened to `position_us` microseconds.
+    /// This causes a `Seeked` D-Bus signal to be emitted on the next wakeup.
+    pub fn notify_seeked(&self, position_us: i64) {
+        if let Ok(mut guard) = self.state.lock() {
+            guard.seeked_to_us = Some(position_us);
+            guard.position_us = position_us;
+        }
+        let _ = self.trigger.try_send(());
+    }
 }
 
 // ── MPRIS implementation ──────────────────────────────────────────────────────
@@ -90,6 +104,8 @@ impl MprisHandle {
 struct LyraPlayer {
     state: Arc<Mutex<MprisState>>,
     qt_thread: cxx_qt::CxxQtThread<Player>,
+    /// Trigger channel: sending `()` wakes the MPRIS loop to emit signals.
+    trigger: Sender<()>,
 }
 
 // mpris-server 0.10 generates both `RootInterface` and `PlayerInterface`
@@ -210,12 +226,59 @@ impl mpris_server::PlayerInterface for LyraPlayer {
         Ok(())
     }
 
-    async fn seek(&self, _offset: Time) -> fdo::Result<()> {
-        // Seek deferred to a later phase.
+    async fn seek(&self, offset: Time) -> fdo::Result<()> {
+        // RELATIVE seek: current_position + offset, clamped to [0, duration].
+        let (current_us, duration_us) = self
+            .state
+            .lock()
+            .map(|g| (g.position_us, g.duration_us))
+            .unwrap_or((0, 0));
+
+        if duration_us <= 0 {
+            return Ok(());
+        }
+
+        let offset_us = offset.as_micros();
+        let target_us = (current_us + offset_us).clamp(0, duration_us);
+        let target_secs = target_us as f64 / 1_000_000.0;
+
+        // Store the seeked position so the loop can emit Signal::Seeked.
+        if let Ok(mut guard) = self.state.lock() {
+            guard.seeked_to_us = Some(target_us);
+            guard.position_us = target_us;
+        }
+        let _ = self.trigger.try_send(());
+
+        let _ = self.qt_thread.queue(move |mut p| {
+            p.as_mut().seek_to_secs(target_secs);
+        });
         Ok(())
     }
 
-    async fn set_position(&self, _track_id: TrackId, _position: Time) -> fdo::Result<()> {
+    async fn set_position(&self, _track_id: TrackId, position: Time) -> fdo::Result<()> {
+        // ABSOLUTE seek: position is in microseconds.
+        let duration_us = self
+            .state
+            .lock()
+            .map(|g| g.duration_us)
+            .unwrap_or(0);
+
+        if duration_us <= 0 {
+            return Ok(());
+        }
+
+        let pos_us = position.as_micros().clamp(0, duration_us);
+        let target_secs = pos_us as f64 / 1_000_000.0;
+
+        if let Ok(mut guard) = self.state.lock() {
+            guard.seeked_to_us = Some(pos_us);
+            guard.position_us = pos_us;
+        }
+        let _ = self.trigger.try_send(());
+
+        let _ = self.qt_thread.queue(move |mut p| {
+            p.as_mut().seek_to_secs(target_secs);
+        });
         Ok(())
     }
 
@@ -303,7 +366,7 @@ impl mpris_server::PlayerInterface for LyraPlayer {
     }
 
     async fn can_seek(&self) -> fdo::Result<bool> {
-        Ok(false)
+        Ok(true)
     }
 
     async fn can_control(&self) -> fdo::Result<bool> {
@@ -321,8 +384,11 @@ impl mpris_server::PlayerInterface for LyraPlayer {
 /// operational.
 pub fn start(qt: cxx_qt::CxxQtThread<Player>) -> Option<MprisHandle> {
     let state = Arc::new(Mutex::new(MprisState::default()));
-    // Bounded channel of depth 1: we only need to know "something changed".
-    let (tx, rx): (Sender<()>, Receiver<()>) = async_channel::bounded(1);
+    // Bounded channel of depth 4: allows both Qt-side updates and MPRIS-side
+    // seek wakeups without losing pings.
+    let (tx, rx): (Sender<()>, Receiver<()>) = async_channel::bounded(4);
+    // Clone the sender so the MPRIS thread can self-trigger (for Seeked signal).
+    let tx_for_thread = tx.clone();
 
     let handle = MprisHandle {
         state: Arc::clone(&state),
@@ -332,7 +398,7 @@ pub fn start(qt: cxx_qt::CxxQtThread<Player>) -> Option<MprisHandle> {
     std::thread::Builder::new()
         .name("lyra-mpris".to_owned())
         .spawn(move || {
-            run_mpris_server(state, rx, qt);
+            run_mpris_server(state, rx, tx_for_thread, qt);
         })
         .ok()?;
 
@@ -340,14 +406,19 @@ pub fn start(qt: cxx_qt::CxxQtThread<Player>) -> Option<MprisHandle> {
 }
 
 /// Blocking MPRIS event loop running on the dedicated MPRIS thread.
+///
+/// `tx` is a clone of the same sender that `rx` receives from; it is given to
+/// `LyraPlayer` so D-Bus seek methods can wake the loop after updating state.
 fn run_mpris_server(
     state: Arc<Mutex<MprisState>>,
     rx: Receiver<()>,
+    tx: Sender<()>,
     qt: cxx_qt::CxxQtThread<Player>,
 ) {
     let player_impl = LyraPlayer {
         state: Arc::clone(&state),
         qt_thread: qt,
+        trigger: tx,
     };
 
     // `async_io::block_on` drives the zbus async executor on this thread.
@@ -365,7 +436,24 @@ fn run_mpris_server(
         loop {
             match rx.recv().await {
                 Ok(()) => {
-                    let st = state.lock().map(|g| g.clone()).unwrap_or_default();
+                    // Snapshot state; also drain the seeked_to_us flag atomically.
+                    let (st, seeked_to_us) = {
+                        let mut guard = match state.lock() {
+                            Ok(g) => g,
+                            Err(_) => continue,
+                        };
+                        let seeked = guard.seeked_to_us.take();
+                        (guard.clone(), seeked)
+                    };
+
+                    // Emit Seeked signal first if a seek happened.
+                    if let Some(pos_us) = seeked_to_us {
+                        let t = Time::from_micros(pos_us);
+                        if let Err(e) = server.emit(Signal::Seeked { position: t }).await {
+                            eprintln!("[lyra-mpris] Seeked emit error: {e}");
+                        }
+                    }
+
                     let props = vec![
                         Property::PlaybackStatus(st.status),
                         Property::Metadata(build_metadata(&st)),

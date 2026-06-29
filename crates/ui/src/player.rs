@@ -93,6 +93,12 @@ pub mod qobject {
         #[cxx_name = "seek"]
         fn seek(self: Pin<&mut Player>, fraction: f64);
 
+        /// Seek to an absolute position in seconds.
+        /// Used by the MPRIS `Seek`/`SetPosition` D-Bus methods.
+        #[qinvokable]
+        #[cxx_name = "seekToSecs"]
+        fn seek_to_secs(self: Pin<&mut Player>, secs: f64);
+
         /// Set the master volume (0.0..=1.0).  Updates the engine immediately.
         #[qinvokable]
         #[cxx_name = "changeVolume"]
@@ -342,6 +348,7 @@ impl qobject::Player {
             cover_path: r.current_cover_thumb.to_string(),
             duration_us: (r.duration_secs * 1_000_000.0) as i64,
             position_us: (r.position_secs * 1_000_000.0) as i64,
+            seeked_to_us: None,
         };
         handle.update(state);
     }
@@ -628,6 +635,39 @@ impl qobject::Player {
         // Update position display immediately so the UI feels responsive,
         // even though the engine seek may be a no-op.
         self.as_mut().set_position_secs(target_secs);
+        // Notify MPRIS of the new position so the Seeked signal is emitted.
+        let pos_us = (target_secs * 1_000_000.0) as i64;
+        let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+        if let Some(ref handle) = r.mpris_handle {
+            handle.notify_seeked(pos_us);
+        }
+    }
+
+    pub fn seek_to_secs(mut self: Pin<&mut Self>, secs: f64) {
+        let dur = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.duration_secs
+        };
+
+        if dur <= 0.0 {
+            return;
+        }
+
+        let target_secs = secs.clamp(0.0, dur);
+        {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            if let Some(e) = r.engine.as_mut() {
+                let _ = e.seek(target_secs);
+            }
+        }
+        self.as_mut().set_position_secs(target_secs);
+        // Notify MPRIS so the Seeked signal is emitted (when called from D-Bus,
+        // the MPRIS loop already set seeked_to_us, but this is harmless to repeat).
+        let pos_us = (target_secs * 1_000_000.0) as i64;
+        let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+        if let Some(ref handle) = r.mpris_handle {
+            handle.notify_seeked(pos_us);
+        }
     }
 
     fn set_volume_invokable(mut self: Pin<&mut Self>, v: f64) {
