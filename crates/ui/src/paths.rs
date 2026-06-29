@@ -27,6 +27,25 @@ pub fn library_db_path() -> PathBuf {
     db_dir.join("library.db")
 }
 
+/// Return the absolute path to the lyra album-art thumbnail cache directory.
+///
+/// Respects `$XDG_CACHE_HOME`; falls back to `$HOME/.cache` when the variable
+/// is absent or empty.  Creates the directory if needed (ignores errors).
+pub fn art_cache_dir() -> std::path::PathBuf {
+    let cache_home = std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_owned());
+            std::path::PathBuf::from(home).join(".cache")
+        });
+
+    let art_dir = cache_home.join("lyra").join("art");
+    let _ = std::fs::create_dir_all(&art_dir);
+    art_dir
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

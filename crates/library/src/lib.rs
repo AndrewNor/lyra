@@ -31,7 +31,8 @@ pub struct ScanSummary {
 }
 
 /// Incrementally scans `root` for audio files, upserting new/changed ones into `db`.
-pub fn scan(root: &Path, db: &mut lyra_db::Db) -> Result<ScanSummary> {
+/// Album art thumbnails are stored via `art` when embedded cover data is present.
+pub fn scan(root: &Path, db: &mut lyra_db::Db, art: &ArtCache) -> Result<ScanSummary> {
     use rayon::prelude::*;
     use std::time::UNIX_EPOCH;
 
@@ -102,6 +103,17 @@ pub fn scan(root: &Path, db: &mut lyra_db::Db) -> Result<ScanSummary> {
             .to_string();
         let title = tags.title.unwrap_or(stem);
 
+        // Attempt to extract and store a cover thumbnail; any error is
+        // silently ignored — the track is never failed for a missing cover.
+        let cover_thumb: Option<String> = lyra_metadata::read_cover(&path)
+            .ok()
+            .flatten()
+            .and_then(|cover| {
+                art.store(&cover.data)
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            });
+
         let new_track = lyra_db::model::NewTrack {
             path: path_str,
             title,
@@ -113,7 +125,7 @@ pub fn scan(root: &Path, db: &mut lyra_db::Db) -> Result<ScanSummary> {
             year: tags.year,
             duration_ms: tags.duration_ms,
             mtime,
-            cover_thumb: None,
+            cover_thumb,
         };
 
         match db.upsert_track(&new_track) {

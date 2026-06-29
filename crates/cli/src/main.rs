@@ -137,7 +137,13 @@ impl App {
             .map(|d| PathBuf::from(shellexpand_tilde(&d)))
             .unwrap_or_else(default_music_dir);
         println!("Scanning {} …", root.display());
-        match lyra_library::scan(&root, &mut self.db) {
+        let art_dir = {
+            let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+            PathBuf::from(home).join(".cache").join("lyra").join("art")
+        };
+        let _ = std::fs::create_dir_all(&art_dir);
+        let art = lyra_library::ArtCache::new(art_dir);
+        match lyra_library::scan(&root, &mut self.db, &art) {
             Ok(summary) => {
                 println!(
                     "Scan complete: added={} updated={} unchanged={} failed={}",
