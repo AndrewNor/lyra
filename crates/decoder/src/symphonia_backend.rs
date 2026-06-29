@@ -6,10 +6,11 @@ use symphonia::core::audio::GenericAudioBufferRef;
 use symphonia::core::codecs::audio::{AudioDecoder, AudioDecoderOptions};
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
+use symphonia::core::formats::{FormatOptions, FormatReader, SeekMode, SeekTo, TrackType};
 use symphonia::core::formats::probe::Hint;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
+use symphonia::core::units::Time;
 
 use crate::{AudioSpec, Decoder, Error, Result};
 
@@ -92,6 +93,21 @@ impl SymphoniaDecoder {
 impl Decoder for SymphoniaDecoder {
     fn spec(&self) -> AudioSpec {
         self.spec
+    }
+
+    fn seek_to_secs(&mut self, secs: f64) -> Result<()> {
+        let time = Time::try_from_secs_f64(secs.max(0.0)).unwrap_or(Time::ZERO);
+
+        self.format.seek(
+            SeekMode::Coarse,
+            SeekTo::Time { time, track_id: Some(self.track_id) },
+        )?;
+
+        // Reset the codec after seeking so leftover state is discarded.
+        self.codec.reset();
+        self.done = false;
+
+        Ok(())
     }
 
     fn next_chunk(&mut self) -> Result<Option<Vec<f32>>> {

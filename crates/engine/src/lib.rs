@@ -20,6 +20,9 @@ use thiserror::Error;
 use decode_loop::DecodeThread;
 use output::{OutputDevice, RING_BUFFER_SAMPLES, build_output_stream};
 
+/// Sentinel value for `seek_ms` meaning "no seek pending".
+pub(crate) const SEEK_NONE: u64 = u64::MAX;
+
 // ── Error type ──────────────────────────────────────────────────────────────
 
 /// Errors produced by `lyra-engine`.
@@ -79,6 +82,21 @@ pub struct Engine {
     /// samples actually popped from the ring buffer (not silence-fill).
     /// Reset to 0 at the start of every `play()`.
     frames_played: Arc<AtomicU64>,
+
+    /// Seek target in milliseconds.  `SEEK_NONE` (u64::MAX) means no seek
+    /// is pending.  Written by `seek()` on the UI thread; read by the decode
+    /// thread and cleared once the seek completes.
+    seek_ms: Arc<AtomicU64>,
+
+    /// Seek generation counter — bumped each time a new seek is requested.
+    /// Lets the decode thread detect a new seek even if the old one hasn't
+    /// been cleared yet (shouldn't happen in practice, but defensive).
+    seek_generation: Arc<AtomicU64>,
+
+    /// Flushing flag: when `true` the RT callback discards ring-buffer
+    /// contents and outputs silence.  Set by `seek()`, cleared by the decode
+    /// thread once the seek is complete.
+    flushing: Arc<AtomicBool>,
 }
 
 impl Engine {
@@ -96,6 +114,9 @@ impl Engine {
             stop_flag: Arc::new(AtomicBool::new(false)),
             paused_flag: Arc::new(AtomicBool::new(false)),
             frames_played: Arc::new(AtomicU64::new(0)),
+            seek_ms: Arc::new(AtomicU64::new(SEEK_NONE)),
+            seek_generation: Arc::new(AtomicU64::new(0)),
+            flushing: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -112,6 +133,10 @@ impl Engine {
         // Reset the position counter for the new track.
         self.frames_played.store(0, Ordering::Relaxed);
 
+        // Reset seek state for the new track.
+        self.seek_ms.store(SEEK_NONE, Ordering::Relaxed);
+        self.flushing.store(false, Ordering::Relaxed);
+
         // Fresh stop/pause flags.
         let stop_flag = Arc::new(AtomicBool::new(false));
         let paused_flag = Arc::new(AtomicBool::new(false));
@@ -124,6 +149,7 @@ impl Engine {
             &self.out,
             consumer,
             Arc::clone(&self.frames_played),
+            Arc::clone(&self.flushing),
             self.out.channels,
         )?;
 
@@ -135,6 +161,10 @@ impl Engine {
             self.out.channels,
             Arc::clone(&stop_flag),
             Arc::clone(&paused_flag),
+            Arc::clone(&self.seek_ms),
+            Arc::clone(&self.seek_generation),
+            Arc::clone(&self.flushing),
+            Arc::clone(&self.frames_played),
         )?;
 
         self.stream = Some(stream);
@@ -185,28 +215,28 @@ impl Engine {
         self.out.sample_rate
     }
 
-    /// Seek to `secs` seconds into the current track (best-effort).
+    /// Seek to `secs` seconds into the current track (best-effort, coarse).
     ///
-    /// # Current status — DEFERRED (no-op)
-    ///
-    /// Interactive seek requires:
-    ///   1. A command channel to the decode thread (not yet present).
-    ///   2. Draining / resetting the `rtrb` ring buffer so stale decoded audio
-    ///      does not play through after the seek point.
-    ///   3. Calling `symphonia::FormatReader::seek()` on the decode thread.
-    ///
-    /// The ring buffer is split at construction time — the consumer end lives
-    /// inside the cpal callback closure and there is no safe way to drain or
-    /// replace it without rebuilding the stream.  Doing so cleanly requires a
-    /// non-trivial refactor of the decode-loop/output architecture.
-    ///
-    /// Rather than risk destabilising the working engine, this is intentionally
-    /// left as a no-op.  The position display (A1) is fully functional.
-    ///
-    /// TODO: interactive seek — add a `SeekCmd` channel to `DecodeThread`,
-    ///       rebuild the ring-buffer pair on seek, restart the stream.
-    pub fn seek(&mut self, _secs: f64) -> Result<()> {
-        // No-op: see doc comment above.
+    /// Signals the decode thread to seek via a shared atomic; the RT callback
+    /// drains and silences the ring buffer while the seek is in flight.
+    /// The actual seek happens asynchronously on the decode thread.
+    /// No-op when stopped.
+    pub fn seek(&mut self, secs: f64) -> Result<()> {
+        if self.state == PlaybackState::Stopped {
+            return Ok(());
+        }
+
+        let target_ms = (secs.max(0.0) * 1000.0) as u64;
+
+        // Set the flushing flag FIRST so the RT callback starts discarding
+        // stale audio immediately.
+        self.flushing.store(true, Ordering::Release);
+
+        // Store the seek target and bump the generation so the decode thread
+        // notices even if it is currently processing a previous seek.
+        self.seek_ms.store(target_ms, Ordering::Release);
+        self.seek_generation.fetch_add(1, Ordering::Release);
+
         Ok(())
     }
 
@@ -226,6 +256,9 @@ impl Engine {
 
         self.stop_flag = Arc::new(AtomicBool::new(false));
         self.paused_flag = Arc::new(AtomicBool::new(false));
+        self.seek_ms = Arc::new(AtomicU64::new(SEEK_NONE));
+        self.seek_generation = Arc::new(AtomicU64::new(0));
+        self.flushing = Arc::new(AtomicBool::new(false));
         self.state = PlaybackState::Stopped;
     }
 }

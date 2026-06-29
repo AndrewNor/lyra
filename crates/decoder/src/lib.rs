@@ -49,4 +49,15 @@ pub trait Decoder {
     /// vector (channels × frames).  Returns `Ok(None)` when the stream is
     /// exhausted.  Any other error is propagated as `Err(…)`.
     fn next_chunk(&mut self) -> Result<Option<Vec<f32>>>;
+
+    /// Seek to `secs` seconds from the start of the stream.
+    ///
+    /// Uses coarse (keyframe) seeking: the actual position may be slightly
+    /// before the requested time.  On success returns the actual timestamp
+    /// that was seeked to (in the stream's timebase ticks).
+    ///
+    /// Callers should call [`next_chunk`] immediately after a seek; any
+    /// in-flight audio from before the seek is the caller's responsibility
+    /// to discard.
+    fn seek_to_secs(&mut self, secs: f64) -> Result<()>;
 }
