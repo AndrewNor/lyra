@@ -5,7 +5,13 @@ fn main() {
     // URI must match CMakeLists.txt and Main.qml byte-for-byte.
     CxxQtBuilder::new_qml_module(
         QmlModule::new("ai.drivee.lyra")
-            .qml_files(["qml/Main.qml", "qml/SidebarItem.qml", "qml/TrackDelegate.qml"]),
+            .qml_files([
+                "qml/Main.qml",
+                "qml/SidebarItem.qml",
+                "qml/TrackDelegate.qml",
+                "qml/AlbumCard.qml",
+                "qml/ArtistRow.qml",
+            ]),
     )
     .file("src/bridge.rs")
     .file("src/library.rs")

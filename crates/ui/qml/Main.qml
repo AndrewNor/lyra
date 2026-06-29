@@ -19,6 +19,14 @@ Kirigami.ApplicationWindow {
 
     Component.onCompleted: library.loadAll()
 
+    // ── View state machine ───────────────────────────────────────────────────
+    // Possible values: "songs" | "albums" | "album_detail"
+    //                  "artists" | "artist_detail"
+    property string view: "songs"
+
+    // Name of the album/artist currently being drilled into (for the header)
+    property string detailName: ""
+
     // ── Position polling timer (250 ms while Playing) ────────────────────────
     Timer {
         id: positionTimer
@@ -44,6 +52,20 @@ Kirigami.ApplicationWindow {
     // ── Parsed track list — re-evaluated whenever results_json changes ───────
     property var tracks: {
         var s = library.results_json
+        if (!s || s.length === 0) return []
+        try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    // ── Parsed albums list ───────────────────────────────────────────────────
+    property var albums: {
+        var s = library.albums_json
+        if (!s || s.length === 0) return []
+        try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    // ── Parsed artists list ──────────────────────────────────────────────────
+    property var artists: {
+        var s = library.artists_json
         if (!s || s.length === 0) return []
         try { return JSON.parse(s) } catch(e) { return [] }
     }
@@ -94,10 +116,13 @@ Kirigami.ApplicationWindow {
                 Layout.preferredWidth: 260
                 placeholderText: "Search tracks…"
                 onAccepted: {
-                    if (text.trim().length === 0)
+                    if (text.trim().length === 0) {
                         library.loadAll()
-                    else
+                        root.view = "songs"
+                    } else {
                         library.search(text)
+                        root.view = "songs"
+                    }
                 }
             }
 
@@ -414,18 +439,29 @@ Kirigami.ApplicationWindow {
                     SidebarItem {
                         iconName: "audio-x-generic"
                         label: "Songs"
-                        active: true
-                        onActivated: library.loadAll()
+                        active: root.view === "songs"
+                        onActivated: {
+                            root.view = "songs"
+                            library.loadAll()
+                        }
                     }
                     SidebarItem {
                         iconName: "media-album-cover"
                         label: "Albums"
-                        enabled: false
+                        active: root.view === "albums" || root.view === "album_detail"
+                        onActivated: {
+                            root.view = "albums"
+                            library.loadAlbums()
+                        }
                     }
                     SidebarItem {
                         iconName: "user-identity"
                         label: "Artists"
-                        enabled: false
+                        active: root.view === "artists" || root.view === "artist_detail"
+                        onActivated: {
+                            root.view = "artists"
+                            library.loadArtists()
+                        }
                     }
                     SidebarItem {
                         iconName: "tag"
@@ -517,101 +553,302 @@ Kirigami.ApplicationWindow {
                 }
             }
 
-            // ── Main content: track list ──────────────────────────────────────
+            // ── Main content area — switches on root.view ─────────────────────
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
 
-                ListView {
-                    id: trackList
+                // ── Songs view (+ detail track lists) ──────────────────────
+                // Visible for "songs", "album_detail", "artist_detail"
+                Item {
                     anchors.fill: parent
-                    model: root.tracks
-                    clip: true
-                    reuseItems: true
+                    visible: root.view === "songs"
+                             || root.view === "album_detail"
+                             || root.view === "artist_detail"
 
-                    Controls.ScrollBar.vertical: Controls.ScrollBar {
-                        policy: Controls.ScrollBar.AsNeeded
-                    }
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
 
-                    header: Item {
-                        width: trackList.width
-                        height: 32
+                        // Detail header — shown only in drill-down views
+                        Item {
+                            Layout.fillWidth: true
+                            height: (root.view === "album_detail" || root.view === "artist_detail")
+                                    ? 44 : 0
+                            visible: root.view === "album_detail" || root.view === "artist_detail"
+                            clip: true
 
-                        Rectangle {
-                            anchors.fill: parent
-                            color: Kirigami.Theme.backgroundColor || "#ffffff"
-                        }
-
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 6
-                            anchors.rightMargin: Kirigami.Units.largeSpacing
-                            spacing: 0
-
-                            Item { width: 52 }
-
-                            Controls.Label {
-                                Layout.fillWidth: true
-                                Layout.leftMargin: 10
-                                text: "Title / Artist"
-                                font.bold: true
-                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
-                                color: Kirigami.Theme.disabledTextColor || "#888888"
-                                font.capitalization: Font.AllUppercase
-                                font.letterSpacing: 0.4
+                            Rectangle {
+                                anchors.fill: parent
+                                color: Kirigami.Theme.backgroundColor || "#ffffff"
                             }
 
-                            Controls.Label {
-                                Layout.preferredWidth: 50
-                                horizontalAlignment: Text.AlignRight
-                                text: "Time"
-                                font.bold: true
-                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
-                                color: Kirigami.Theme.disabledTextColor || "#888888"
-                                font.capitalization: Font.AllUppercase
-                                font.letterSpacing: 0.4
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: Kirigami.Units.largeSpacing
+                                anchors.rightMargin: Kirigami.Units.largeSpacing
+                                spacing: Kirigami.Units.smallSpacing
+
+                                Controls.ToolButton {
+                                    text: root.view === "album_detail"
+                                          ? "‹ Albums"
+                                          : "‹ Artists"
+                                    onClicked: {
+                                        if (root.view === "album_detail")
+                                            root.view = "albums"
+                                        else
+                                            root.view = "artists"
+                                    }
+                                }
+
+                                Controls.Label {
+                                    Layout.fillWidth: true
+                                    elide: Text.ElideRight
+                                    text: root.detailName
+                                    font.bold: true
+                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.05
+                                    color: Kirigami.Theme.textColor || "#000000"
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: 1
+                                color: Kirigami.Theme.separatorColor || "#d0d0d0"
                             }
                         }
 
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            width: parent.width
-                            height: 1
-                            color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                        // Track list
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            ListView {
+                                id: trackList
+                                anchors.fill: parent
+                                model: root.tracks
+                                clip: true
+                                reuseItems: true
+
+                                Controls.ScrollBar.vertical: Controls.ScrollBar {
+                                    policy: Controls.ScrollBar.AsNeeded
+                                }
+
+                                header: Item {
+                                    width: trackList.width
+                                    height: 32
+
+                                    Rectangle {
+                                        anchors.fill: parent
+                                        color: Kirigami.Theme.backgroundColor || "#ffffff"
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 6
+                                        anchors.rightMargin: Kirigami.Units.largeSpacing
+                                        spacing: 0
+
+                                        Item { width: 52 }
+
+                                        Controls.Label {
+                                            Layout.fillWidth: true
+                                            Layout.leftMargin: 10
+                                            text: "Title / Artist"
+                                            font.bold: true
+                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                            color: Kirigami.Theme.disabledTextColor || "#888888"
+                                            font.capitalization: Font.AllUppercase
+                                            font.letterSpacing: 0.4
+                                        }
+
+                                        Controls.Label {
+                                            Layout.preferredWidth: 50
+                                            horizontalAlignment: Text.AlignRight
+                                            text: "Time"
+                                            font.bold: true
+                                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                            color: Kirigami.Theme.disabledTextColor || "#888888"
+                                            font.capitalization: Font.AllUppercase
+                                            font.letterSpacing: 0.4
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        anchors.bottom: parent.bottom
+                                        width: parent.width
+                                        height: 1
+                                        color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                                    }
+                                }
+
+                                headerPositioning: ListView.OverlayHeader
+
+                                delegate: TrackDelegate {
+                                    width: trackList.width
+                                    trackData: modelData
+                                    trackIndex: index
+                                    isCurrentTrack: {
+                                        var title = player.current_title || ""
+                                        return title.length > 0
+                                               && modelData
+                                               && modelData.title === title
+                                    }
+                                    onTrackClicked: function(idx) {
+                                        player.playFromList(library.results_json, idx)
+                                    }
+                                }
+
+                                Kirigami.PlaceholderMessage {
+                                    anchors.centerIn: parent
+                                    visible: trackList.count === 0 && !(library.scanning || false)
+                                    text: "No tracks found"
+                                    explanation: "Click Scan to index your music library, or try a different search."
+                                    icon.name: "audio-x-generic"
+                                }
+
+                                Kirigami.PlaceholderMessage {
+                                    anchors.centerIn: parent
+                                    visible: library.scanning || false
+                                    text: "Scanning library…"
+                                    explanation: library.status_text || ""
+                                    icon.name: "view-refresh"
+                                }
+                            }
                         }
                     }
+                }
 
-                    headerPositioning: ListView.OverlayHeader
+                // ── Albums grid view ────────────────────────────────────────
+                Item {
+                    anchors.fill: parent
+                    visible: root.view === "albums"
 
-                    delegate: TrackDelegate {
-                        width: trackList.width
-                        trackData: modelData
-                        trackIndex: index
-                        isCurrentTrack: {
-                            var title = player.current_title || ""
-                            return title.length > 0
-                                   && modelData
-                                   && modelData.title === title
+                    GridView {
+                        id: albumGrid
+                        anchors.fill: parent
+                        anchors.margins: Kirigami.Units.largeSpacing
+                        model: root.albums
+                        clip: true
+
+                        // Responsive cell size: aim for ~160 px, at least 140
+                        property int cellTargetWidth: 160
+                        property int cols: Math.max(2, Math.floor(width / cellTargetWidth))
+                        cellWidth: Math.floor(width / cols)
+                        // Height = cover square + text block (~80 px) + padding
+                        cellHeight: cellWidth + 80
+
+                        Controls.ScrollBar.vertical: Controls.ScrollBar {
+                            policy: Controls.ScrollBar.AsNeeded
                         }
-                        onTrackClicked: function(idx) {
-                            player.playFromList(library.results_json, idx)
+
+                        delegate: Item {
+                            width: albumGrid.cellWidth
+                            height: albumGrid.cellHeight
+
+                            AlbumCard {
+                                anchors.fill: parent
+                                anchors.margins: 4
+                                albumData: modelData
+                                onCardClicked: {
+                                    if (!modelData) return
+                                    root.detailName = modelData.title || ""
+                                    library.loadAlbumTracks(modelData.id)
+                                    root.view = "album_detail"
+                                }
+                            }
+                        }
+
+                        Kirigami.PlaceholderMessage {
+                            anchors.centerIn: parent
+                            visible: albumGrid.count === 0 && !(library.scanning || false)
+                            text: "No albums found"
+                            explanation: "Click Scan to index your music library."
+                            icon.name: "media-album-cover"
                         }
                     }
+                }
 
-                    Kirigami.PlaceholderMessage {
-                        anchors.centerIn: parent
-                        visible: trackList.count === 0 && !(library.scanning || false)
-                        text: "No tracks found"
-                        explanation: "Click Scan to index your music library, or try a different search."
-                        icon.name: "audio-x-generic"
-                    }
+                // ── Artists list view ───────────────────────────────────────
+                Item {
+                    anchors.fill: parent
+                    visible: root.view === "artists"
 
-                    Kirigami.PlaceholderMessage {
-                        anchors.centerIn: parent
-                        visible: library.scanning || false
-                        text: "Scanning library…"
-                        explanation: library.status_text || ""
-                        icon.name: "view-refresh"
+                    ListView {
+                        id: artistList
+                        anchors.fill: parent
+                        model: root.artists
+                        clip: true
+                        reuseItems: true
+
+                        Controls.ScrollBar.vertical: Controls.ScrollBar {
+                            policy: Controls.ScrollBar.AsNeeded
+                        }
+
+                        header: Item {
+                            width: artistList.width
+                            height: 32
+
+                            Rectangle {
+                                anchors.fill: parent
+                                color: Kirigami.Theme.backgroundColor || "#ffffff"
+                            }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: Kirigami.Units.largeSpacing
+                                anchors.rightMargin: Kirigami.Units.largeSpacing
+                                spacing: 0
+
+                                Controls.Label {
+                                    Layout.fillWidth: true
+                                    text: "Artist"
+                                    font.bold: true
+                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 0.4
+                                }
+
+                                Controls.Label {
+                                    text: "Albums · Tracks"
+                                    font.bold: true
+                                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                                    font.capitalization: Font.AllUppercase
+                                    font.letterSpacing: 0.4
+                                }
+                            }
+
+                            Rectangle {
+                                anchors.bottom: parent.bottom
+                                width: parent.width
+                                height: 1
+                                color: Kirigami.Theme.separatorColor || "#d0d0d0"
+                            }
+                        }
+
+                        headerPositioning: ListView.OverlayHeader
+
+                        delegate: ArtistRow {
+                            width: artistList.width
+                            artistData: modelData
+                            onRowClicked: {
+                                if (!modelData) return
+                                root.detailName = modelData.name || ""
+                                library.loadArtistTracks(modelData.id)
+                                root.view = "artist_detail"
+                            }
+                        }
+
+                        Kirigami.PlaceholderMessage {
+                            anchors.centerIn: parent
+                            visible: artistList.count === 0 && !(library.scanning || false)
+                            text: "No artists found"
+                            explanation: "Click Scan to index your music library."
+                            icon.name: "user-identity"
+                        }
                     }
                 }
             }

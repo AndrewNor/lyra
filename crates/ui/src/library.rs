@@ -21,6 +21,8 @@ pub mod qobject {
         #[qproperty(i32, track_count)]
         #[qproperty(bool, scanning)]
         #[qproperty(QString, status_text)]
+        #[qproperty(QString, albums_json)]
+        #[qproperty(QString, artists_json)]
         type Library = super::LibraryRust;
 
         /// Load all tracks from the db → resultsJson + trackCount.
@@ -35,6 +37,26 @@ pub mod qobject {
         /// Background scan of `~/Music`, then reload.
         #[qinvokable]
         fn scan(self: Pin<&mut Library>);
+
+        /// Load all albums → albums_json.
+        #[qinvokable]
+        #[cxx_name = "loadAlbums"]
+        fn load_albums(self: Pin<&mut Library>);
+
+        /// Load all artists → artists_json.
+        #[qinvokable]
+        #[cxx_name = "loadArtists"]
+        fn load_artists(self: Pin<&mut Library>);
+
+        /// Load tracks for a specific album → results_json.
+        #[qinvokable]
+        #[cxx_name = "loadAlbumTracks"]
+        fn load_album_tracks(self: Pin<&mut Library>, id: i64);
+
+        /// Load tracks for a specific artist → results_json.
+        #[qinvokable]
+        #[cxx_name = "loadArtistTracks"]
+        fn load_artist_tracks(self: Pin<&mut Library>, id: i64);
     }
 
     impl cxx_qt::Threading for Library {}
@@ -43,7 +65,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use lyra_db::{Db, Track};
+use lyra_db::{Album, Artist, Db, Track};
 
 use crate::paths::{art_cache_dir, library_db_path};
 
@@ -54,6 +76,8 @@ pub struct LibraryRust {
     track_count: i32,
     scanning: bool,
     status_text: QString,
+    albums_json: QString,
+    artists_json: QString,
 
     /// Live database connection (Qt thread only).
     db: Db,
@@ -97,13 +121,15 @@ impl Default for LibraryRust {
             track_count: 0,
             scanning: false,
             status_text: status,
+            albums_json: QString::from("[]"),
+            artists_json: QString::from("[]"),
             db,
             music_dir,
         }
     }
 }
 
-// ── JSON helper ──────────────────────────────────────────────────────────────
+// ── JSON helpers ─────────────────────────────────────────────────────────────
 
 /// Build a JSON array string from a slice of `Track`s.
 /// Uses `serde_json` for correct string escaping.
@@ -123,6 +149,40 @@ pub(crate) fn tracks_to_json(tracks: &[Track]) -> String {
         })
         .collect();
     // serde_json serializes the outer Vec as a JSON array.
+    serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Build a JSON array string from a slice of `Album`s.
+pub(crate) fn albums_to_json(albums: &[Album]) -> String {
+    let values: Vec<serde_json::Value> = albums
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "title": a.title,
+                "artist": a.artist.as_deref().unwrap_or(""),
+                "year": a.year,
+                "track_count": a.track_count,
+                "cover_thumb": a.cover_thumb.as_deref().unwrap_or(""),
+            })
+        })
+        .collect();
+    serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Build a JSON array string from a slice of `Artist`s.
+pub(crate) fn artists_to_json(artists: &[Artist]) -> String {
+    let values: Vec<serde_json::Value> = artists
+        .iter()
+        .map(|a| {
+            serde_json::json!({
+                "id": a.id,
+                "name": a.name,
+                "album_count": a.album_count,
+                "track_count": a.track_count,
+            })
+        })
+        .collect();
     serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
 }
 
@@ -218,6 +278,82 @@ impl qobject::Library {
                     .set_status_text(QString::from(summary_msg.as_str()));
             });
         });
+    }
+
+    fn load_albums(mut self: Pin<&mut Self>) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .list_albums();
+        match result {
+            Ok(albums) => {
+                let json = albums_to_json(&albums);
+                self.as_mut().set_albums_json(QString::from(json.as_str()));
+                let msg = format!("{} albums", albums.len());
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadAlbums error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_artists(mut self: Pin<&mut Self>) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .list_artists();
+        match result {
+            Ok(artists) => {
+                let json = artists_to_json(&artists);
+                self.as_mut().set_artists_json(QString::from(json.as_str()));
+                let msg = format!("{} artists", artists.len());
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadArtists error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_album_tracks(mut self: Pin<&mut Self>, id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .tracks_by_album(id);
+        match result {
+            Ok(tracks) => {
+                let count = tracks.len() as i32;
+                let json = tracks_to_json(&tracks);
+                self.as_mut().set_results_json(QString::from(json.as_str()));
+                self.as_mut().set_track_count(count);
+                let msg = format!("{count} tracks");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadAlbumTracks error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_artist_tracks(mut self: Pin<&mut Self>, id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .tracks_by_artist(id);
+        match result {
+            Ok(tracks) => {
+                let count = tracks.len() as i32;
+                let json = tracks_to_json(&tracks);
+                self.as_mut().set_results_json(QString::from(json.as_str()));
+                self.as_mut().set_track_count(count);
+                let msg = format!("{count} tracks");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadArtistTracks error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
     }
 }
 
