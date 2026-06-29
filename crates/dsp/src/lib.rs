@@ -6,7 +6,7 @@ pub mod resample;
 
 pub use eq::{EqBand, Equalizer};
 pub use loudness::{analyze_lufs, db_to_linear, replaygain_gain_db};
-pub use resample::resample;
+pub use resample::{resample, StreamResampler};
 
 /// Errors produced by `lyra-dsp`.
 #[derive(Debug, thiserror::Error)]
