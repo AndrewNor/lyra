@@ -820,23 +820,29 @@ impl qobject::Player {
 
     fn set_volume_invokable(mut self: Pin<&mut Self>, v: f64) {
         let clamped = v.clamp(0.0, 1.0);
-        // Store the value so it persists and is applied when the engine is created.
+        // Apply to the engine immediately (reads `clamped`, not the field).
         {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
-            r.volume = clamped;
             if let Some(e) = r.engine.as_ref() {
                 e.set_volume(clamped as f32);
             }
         }
+        // `set_volume` (generated, change-guarded) writes r.volume AND emits
+        // volumeChanged.  Don't pre-mutate r.volume above or the signal is lost
+        // (so the slider wouldn't reflect restored/MPRIS volume changes).
         self.as_mut().set_volume(clamped);
         self.as_ref().save_current_session();
     }
 
     fn toggle_shuffle(mut self: Pin<&mut Self>) {
+        // Update ONLY the play-queue directly here.  The `shuffle` qproperty
+        // field must be written via the generated `set_shuffle` setter below,
+        // NOT pre-mutated: cxx-qt setters are change-guarded (`if self.shuffle
+        // == value { return }`), so pre-mutating the field makes the setter a
+        // no-op and `shuffleChanged` never fires — leaving QML bindings stale.
         let new_shuffle = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             let s = !r.shuffle;
-            r.shuffle = s;
             r.play_queue.set_shuffle(s);
             s
         };
@@ -867,11 +873,12 @@ impl qobject::Player {
     fn set_eq_enabled_invokable(mut self: Pin<&mut Self>, enabled: bool) {
         {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
-            r.eq_enabled = enabled;
             if let Some(e) = r.engine.as_ref() {
                 e.set_eq_enabled(enabled);
             }
         }
+        // Generated setter writes the field + emits the change signal; don't
+        // pre-mutate r.eq_enabled or the change-guarded setter becomes a no-op.
         self.as_mut().set_eq_enabled(enabled);
     }
 
@@ -907,11 +914,11 @@ impl qobject::Player {
     fn set_bit_perfect_invokable(mut self: Pin<&mut Self>, enabled: bool) {
         {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
-            r.bit_perfect = enabled;
             if let Some(e) = r.engine.as_ref() {
                 e.set_bit_perfect(enabled);
             }
         }
+        // Generated setter writes the field + emits; don't pre-mutate the field.
         self.as_mut().set_bit_perfect(enabled);
     }
 
@@ -919,11 +926,11 @@ impl qobject::Player {
         let clamped = secs.clamp(0.0, 12.0);
         {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
-            r.crossfade_secs = clamped;
             if let Some(e) = r.engine.as_ref() {
                 e.set_crossfade_secs(clamped as f32);
             }
         }
+        // Generated setter writes the field + emits; don't pre-mutate the field.
         self.as_mut().set_crossfade_secs(clamped);
     }
 

@@ -800,6 +800,11 @@ Kirigami.ApplicationWindow {
                     Controls.Slider {
                         id: seekBar
                         Layout.fillWidth: true
+                        // Custom background/handle have no implicit height, so the
+                        // slider would collapse to height 0 (no hit area, undraggable).
+                        // Give it an explicit interactive height.
+                        Layout.preferredHeight: 20
+                        implicitHeight: 20
                         from: 0
                         to: 1
                         value: (!seekBar.pressed && player.duration_secs > 0)
@@ -881,6 +886,9 @@ Kirigami.ApplicationWindow {
                     Controls.Slider {
                         id: volumeSlider
                         Layout.fillWidth: true
+                        // See seekBar: avoid collapsing to height 0 (undraggable).
+                        Layout.preferredHeight: 20
+                        implicitHeight: 20
                         from: 0
                         to: 1
                         value: player.volume
