@@ -1,5 +1,4 @@
-// AlbumCard.qml — a single album tile in the Albums grid view.
-// Shows a square cover thumbnail, album title, artist, and track count.
+// AlbumCard.qml — premium album tile (Apple Music / Spotify tier)
 
 import QtQuick
 import QtQuick.Controls as Controls
@@ -13,52 +12,57 @@ Item {
 
     signal cardClicked()
 
-    // ── Cover square ────────────────────────────────────────────────────────
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Kirigami.Units.smallSpacing
-        spacing: Kirigami.Units.smallSpacing
+        anchors.margins: Kirigami.Units.smallSpacing + 2
+        spacing: Kirigami.Units.smallSpacing + 1
 
+        // ── Cover square ────────────────────────────────────────────────
         Item {
+            id: coverItem
             Layout.fillWidth: true
             Layout.preferredHeight: width
 
-            // Shadow layer underneath
+            // Multi-layer soft shadow
             Rectangle {
                 anchors.centerIn: parent
-                width: parent.width - 4
-                height: parent.height - 4
-                anchors.verticalCenterOffset: 4
-                radius: Kirigami.Units.gridUnit
-                color: {
-                    var tc = Kirigami.Theme.textColor
-                    return tc ? Qt.rgba(tc.r, tc.g, tc.b, 0.18) : "#00000020"
-                }
-                // Blur is not available, so we use opacity trick
-                opacity: cardHover.containsMouse ? 0.25 : 0.15
+                width: parent.width - 6
+                height: parent.height - 6
+                anchors.verticalCenterOffset: 10
+                radius: 14
+                color: "#000000"
+                opacity: cardHover.containsMouse ? 0.55 : 0.35
 
-                Behavior on opacity { NumberAnimation { duration: 150 } }
+                Behavior on opacity { NumberAnimation { duration: 180 } }
+            }
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width - 2
+                height: parent.height - 2
+                anchors.verticalCenterOffset: 5
+                radius: 13
+                color: "#000000"
+                opacity: cardHover.containsMouse ? 0.30 : 0.18
+
+                Behavior on opacity { NumberAnimation { duration: 180 } }
             }
 
             Rectangle {
+                id: coverFrame
                 anchors.fill: parent
-                radius: Kirigami.Units.gridUnit
-                color: Kirigami.Theme.alternateBackgroundColor || "#f0f0f0"
+                radius: 12
+                color: Qt.rgba(1, 1, 1, 0.08)
                 clip: true
 
-                // Hover wash on top
-                Rectangle {
-                    anchors.fill: parent
-                    radius: Kirigami.Units.gridUnit
-                    color: {
-                        var tc = Kirigami.Theme.textColor
-                        return (cardHover.containsMouse && tc)
-                               ? Qt.rgba(tc.r, tc.g, tc.b, 0.08)
-                               : "transparent"
-                    }
-                    z: 2
+                // Hover scale applied to this item via transform
+                transform: Scale {
+                    origin.x: coverFrame.width / 2
+                    origin.y: coverFrame.height / 2
+                    xScale: cardHover.containsMouse ? 1.035 : 1.0
+                    yScale: cardHover.containsMouse ? 1.035 : 1.0
 
-                    Behavior on color { ColorAnimation { duration: 120 } }
+                    Behavior on xScale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                    Behavior on yScale { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
                 }
 
                 Image {
@@ -74,32 +78,40 @@ Item {
                     asynchronous: true
                 }
 
-                Kirigami.Icon {
-                    anchors.centerIn: parent
-                    source: "media-album-cover"
-                    width: 40
-                    height: 40
-                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                // Fallback gradient + icon
+                Rectangle {
+                    anchors.fill: parent
                     visible: !coverImg.visible
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: Qt.rgba(0.20, 0.20, 0.30, 1.0) }
+                        GradientStop { position: 1.0; color: Qt.rgba(0.10, 0.10, 0.18, 1.0) }
+                    }
+
+                    Kirigami.Icon {
+                        anchors.centerIn: parent
+                        source: "media-album-cover"
+                        width: 40
+                        height: 40
+                        color: Qt.rgba(1, 1, 1, 0.22)
+                    }
                 }
-            }
 
-            // Lift animation: slight scale on hover
-            transform: Scale {
-                origin.x: parent.width / 2
-                origin.y: parent.height / 2
-                xScale: cardHover.containsMouse ? 1.02 : 1.0
-                yScale: cardHover.containsMouse ? 1.02 : 1.0
+                // Hover shimmer overlay
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 12
+                    color: Qt.rgba(1, 1, 1, cardHover.containsMouse ? 0.06 : 0.0)
+                    z: 2
 
-                Behavior on xScale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
-                Behavior on yScale { NumberAnimation { duration: 150; easing.type: Easing.OutCubic } }
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                }
             }
         }
 
-        // ── Text block below the cover ────────────────────────────────────
+        // ── Text block ──────────────────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 1
+            spacing: 2
 
             Controls.Label {
                 Layout.fillWidth: true
@@ -107,9 +119,9 @@ Item {
                 text: (root.albumData && root.albumData.title)
                       ? root.albumData.title
                       : "(untitled)"
-                font.weight: Font.Medium
+                font.weight: Font.SemiBold
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.90
-                color: Kirigami.Theme.textColor || "#000000"
+                color: Qt.rgba(1, 1, 1, 0.92)
             }
 
             Controls.Label {
@@ -118,7 +130,7 @@ Item {
                 text: (root.albumData && root.albumData.artist)
                       ? root.albumData.artist
                       : ""
-                color: Kirigami.Theme.disabledTextColor || "#888888"
+                color: Qt.rgba(1, 1, 1, 0.45)
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
                 visible: text.length > 0
             }
@@ -130,14 +142,12 @@ Item {
                             ? root.albumData.track_count : 0
                     return n + (n === 1 ? " track" : " tracks")
                 }
-                color: Kirigami.Theme.disabledTextColor || "#888888"
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.75
-                opacity: 0.7
+                color: Qt.rgba(1, 1, 1, 0.28)
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.74
             }
         }
     }
 
-    // ── Click / hover handler ───────────────────────────────────────────────
     MouseArea {
         id: cardHover
         anchors.fill: parent

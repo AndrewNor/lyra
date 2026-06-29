@@ -1,4 +1,4 @@
-// SidebarItem.qml — a single navigation row in the left sidebar.
+// SidebarItem.qml — premium sidebar navigation row (Apple Music / Spotify tier)
 // Signals: activated() when clicked and enabled.
 
 import QtQuick
@@ -16,49 +16,73 @@ Item {
     signal activated()
 
     width: parent ? parent.width : 200
-    height: 38
+    height: 40
 
-    // ── Active pill background ──────────────────────────────────────────────
+    // ── Active pill — accent gradient fill ─────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        anchors.leftMargin: Kirigami.Units.smallSpacing
-        anchors.rightMargin: Kirigami.Units.smallSpacing
+        anchors.leftMargin: 6
+        anchors.rightMargin: 6
         anchors.topMargin: 2
         anchors.bottomMargin: 2
-        radius: Kirigami.Units.smallSpacing
-        color: {
-            var hc = Kirigami.Theme.highlightColor
-            var tc = Kirigami.Theme.textColor
-            if (root.active && hc) return Qt.rgba(hc.r, hc.g, hc.b, 0.15)
-            if (hoverArea.containsMouse && root.enabled && tc)
-                return Qt.rgba(tc.r, tc.g, tc.b, 0.06)
-            return "transparent"
+        radius: 8
+        opacity: root.active ? 1.0 : (hoverArea.containsMouse && root.enabled ? 1.0 : 0.0)
+
+        gradient: Gradient {
+            orientation: Gradient.Horizontal
+            GradientStop {
+                position: 0.0
+                color: root.active
+                       ? Qt.rgba(
+                             (Kirigami.Theme.highlightColor || "#3daee9").r,
+                             (Kirigami.Theme.highlightColor || "#3daee9").g,
+                             (Kirigami.Theme.highlightColor || "#3daee9").b,
+                             0.22
+                         )
+                       : Qt.rgba(1, 1, 1, 0.05)
+            }
+            GradientStop {
+                position: 1.0
+                color: "transparent"
+            }
         }
 
-        Behavior on color { ColorAnimation { duration: 120 } }
+        Behavior on opacity { NumberAnimation { duration: 140 } }
     }
 
-    // ── Left accent bar for active state ───────────────────────────────────
+    // ── Left accent bar ────────────────────────────────────────────────────
     Rectangle {
         anchors.left: parent.left
-        anchors.leftMargin: 0
         anchors.top: parent.top
-        anchors.topMargin: 5
         anchors.bottom: parent.bottom
-        anchors.bottomMargin: 5
+        anchors.topMargin: 7
+        anchors.bottomMargin: 7
         width: 3
-        radius: 1.5
+        radius: 2
+
+        // Glow using layered rectangles (no MultiEffect needed here)
         color: Kirigami.Theme.highlightColor || "#3daee9"
         opacity: root.active ? 1.0 : 0.0
 
-        Behavior on opacity { NumberAnimation { duration: 150 } }
+        // Soft outer glow
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width + 6
+            height: parent.height + 4
+            radius: parent.radius + 3
+            color: Kirigami.Theme.highlightColor || "#3daee9"
+            opacity: 0.30
+            z: -1
+        }
+
+        Behavior on opacity { NumberAnimation { duration: 160 } }
     }
 
     RowLayout {
         anchors.fill: parent
-        anchors.leftMargin: Kirigami.Units.largeSpacing
+        anchors.leftMargin: Kirigami.Units.largeSpacing + 2
         anchors.rightMargin: Kirigami.Units.smallSpacing
-        spacing: Kirigami.Units.smallSpacing + 2
+        spacing: Kirigami.Units.smallSpacing + 3
 
         Kirigami.Icon {
             source: root.iconName
@@ -66,8 +90,8 @@ Item {
             height: 16
             color: root.active
                    ? (Kirigami.Theme.highlightColor || "#3daee9")
-                   : (Kirigami.Theme.textColor || "#000000")
-            opacity: root.enabled ? 1.0 : 0.38
+                   : Qt.rgba(1, 1, 1, 0.60)
+            opacity: root.enabled ? 1.0 : 0.30
 
             Behavior on color { ColorAnimation { duration: 150 } }
         }
@@ -78,10 +102,11 @@ Item {
             elide: Text.ElideRight
             color: root.active
                    ? (Kirigami.Theme.highlightColor || "#3daee9")
-                   : (Kirigami.Theme.textColor || "#000000")
-            opacity: root.enabled ? 1.0 : 0.38
-            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.93
-            font.weight: root.active ? Font.Medium : Font.Normal
+                   : Qt.rgba(1, 1, 1, 0.75)
+            opacity: root.enabled ? 1.0 : 0.30
+            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
+            font.weight: root.active ? Font.SemiBold : Font.Normal
+            letterSpacing: root.active ? 0.2 : 0.0
 
             Behavior on color { ColorAnimation { duration: 150 } }
         }

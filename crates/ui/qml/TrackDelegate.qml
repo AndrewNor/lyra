@@ -1,5 +1,4 @@
-// TrackDelegate.qml — a single row in the main track list.
-// Shows album art thumbnail, title, artist, and duration (m:ss).
+// TrackDelegate.qml — premium track row (Apple Music / Spotify tier)
 
 import QtQuick
 import QtQuick.Controls as Controls
@@ -15,19 +14,18 @@ Item {
 
     signal trackClicked(int idx)
 
-    height: 60
+    height: 64
 
-    // ── Background ──────────────────────────────────────────────────────────
+    // ── Background — hover + active tinting ───────────────────────────────
     Rectangle {
         anchors.fill: parent
         color: {
-            var hc = Kirigami.Theme.highlightColor
-            var tc = Kirigami.Theme.textColor
-            if (root.isCurrentTrack && hc) {
-                return Qt.rgba(hc.r, hc.g, hc.b, 0.12)
+            var hc = Kirigami.Theme.highlightColor || "#3daee9"
+            if (root.isCurrentTrack) {
+                return Qt.rgba(hc.r, hc.g, hc.b, 0.14)
             }
-            if (delegateHover.containsMouse && tc) {
-                return Qt.rgba(tc.r, tc.g, tc.b, 0.05)
+            if (delegateHover.containsMouse) {
+                return Qt.rgba(1, 1, 1, 0.05)
             }
             return "transparent"
         }
@@ -35,59 +33,80 @@ Item {
         Behavior on color { ColorAnimation { duration: 120 } }
     }
 
-    // ── Left accent bar for now-playing ────────────────────────────────────
+    // ── Left accent glow bar for now-playing ──────────────────────────────
     Rectangle {
+        id: accentBar
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
+        anchors.topMargin: 10
+        anchors.bottomMargin: 10
         width: 3
-        radius: 1.5
+        radius: 2
         color: Kirigami.Theme.highlightColor || "#3daee9"
         opacity: root.isCurrentTrack ? 1.0 : 0.0
 
-        Behavior on opacity { NumberAnimation { duration: 150 } }
+        // Soft glow behind bar
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width + 8
+            height: parent.height + 4
+            radius: 6
+            color: Kirigami.Theme.highlightColor || "#3daee9"
+            opacity: 0.28
+            z: -1
+        }
+
+        Behavior on opacity { NumberAnimation { duration: 200 } }
     }
 
-    // ── Bottom separator ────────────────────────────────────────────────────
+    // ── Bottom separator ──────────────────────────────────────────────────
     Rectangle {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: Kirigami.Units.largeSpacing
+        anchors.leftMargin: 72
         height: 1
-        color: Kirigami.Theme.separatorColor || "#e0e0e0"
-        opacity: 0.35
+        color: Qt.rgba(1, 1, 1, 0.07)
     }
 
-    // ── Content ─────────────────────────────────────────────────────────────
+    // ── Content ───────────────────────────────────────────────────────────
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: Kirigami.Units.largeSpacing
         anchors.rightMargin: Kirigami.Units.largeSpacing
         spacing: 0
 
-        // Album art thumbnail
+        // ── Album art thumbnail ───────────────────────────────────────────
         Item {
-            width: 48
-            height: 48
+            width: 50
+            height: 50
 
-            // Shadow simulation: a slightly larger, darker rectangle underneath
+            // Multi-layer soft shadow
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width + 4
+                height: parent.height + 4
+                anchors.verticalCenterOffset: 5
+                radius: 10
+                color: "#000000"
+                opacity: 0.40
+            }
             Rectangle {
                 anchors.centerIn: parent
                 width: parent.width + 2
                 height: parent.height + 2
-                radius: Kirigami.Units.smallSpacing + 1
-                color: {
-                    var tc = Kirigami.Theme.textColor
-                    return tc ? Qt.rgba(tc.r, tc.g, tc.b, 0.12) : "#00000012"
-                }
-                visible: thumbImg.status === Image.Ready || true
+                anchors.verticalCenterOffset: 2
+                radius: 9
+                color: "#000000"
+                opacity: 0.20
             }
 
             Rectangle {
+                id: artContainer
                 anchors.fill: parent
-                radius: Kirigami.Units.smallSpacing
-                color: Kirigami.Theme.alternateBackgroundColor || "#f0f0f0"
+                radius: 8
+                color: Qt.rgba(1, 1, 1, 0.08)
                 clip: true
 
                 Image {
@@ -102,43 +121,100 @@ Item {
                     asynchronous: true
                 }
 
+                // Fallback icon
                 Kirigami.Icon {
                     anchors.centerIn: parent
                     source: "audio-x-generic"
                     width: 22
                     height: 22
-                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                    color: Qt.rgba(1, 1, 1, 0.30)
                     visible: !thumbImg.visible
                 }
 
-                // Playing indicator overlay
+                // Now-playing overlay with animated equalizer bars
                 Rectangle {
                     anchors.fill: parent
-                    radius: Kirigami.Units.smallSpacing
+                    radius: 8
                     color: {
-                        var hc = Kirigami.Theme.highlightColor
-                        return (hc && root.isCurrentTrack)
-                               ? Qt.rgba(hc.r, hc.g, hc.b, 0.65)
+                        var hc = Kirigami.Theme.highlightColor || "#3daee9"
+                        return root.isCurrentTrack
+                               ? Qt.rgba(hc.r, hc.g, hc.b, 0.72)
                                : "transparent"
                     }
                     visible: root.isCurrentTrack
 
-                    Kirigami.Icon {
+                    // Animated equalizer (3 bars) — centered, no anchor conflicts
+                    Item {
                         anchors.centerIn: parent
-                        source: "media-playback-start"
-                        width: 20
-                        height: 20
-                        color: "white"
+                        width: 17   // 3 bars * 3px + 2 gaps * 4px
+                        height: 28
+
+                        Rectangle {
+                            id: eqBar1
+                            x: 0
+                            width: 3
+                            radius: 2
+                            color: "white"
+                            height: 16
+                            anchors.bottom: parent.bottom
+
+                            SequentialAnimation on height {
+                                running: root.isCurrentTrack
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 22; duration: 380; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 8;  duration: 320; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 18; duration: 410; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 12; duration: 290; easing.type: Easing.InOutSine }
+                            }
+                        }
+
+                        Rectangle {
+                            id: eqBar2
+                            x: 7
+                            width: 3
+                            radius: 2
+                            color: "white"
+                            height: 20
+                            anchors.bottom: parent.bottom
+
+                            SequentialAnimation on height {
+                                running: root.isCurrentTrack
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 10; duration: 420; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 24; duration: 350; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 14; duration: 280; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 20; duration: 390; easing.type: Easing.InOutSine }
+                            }
+                        }
+
+                        Rectangle {
+                            id: eqBar3
+                            x: 14
+                            width: 3
+                            radius: 2
+                            color: "white"
+                            height: 13
+                            anchors.bottom: parent.bottom
+
+                            SequentialAnimation on height {
+                                running: root.isCurrentTrack
+                                loops: Animation.Infinite
+                                NumberAnimation { to: 20; duration: 310; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 8;  duration: 440; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 22; duration: 360; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 15; duration: 330; easing.type: Easing.InOutSine }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // Title + Artist
+        // ── Title + Artist ─────────────────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
             Layout.leftMargin: Kirigami.Units.largeSpacing
-            spacing: 2
+            spacing: 3
 
             Controls.Label {
                 Layout.fillWidth: true
@@ -150,21 +226,21 @@ Item {
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.97
                 color: root.isCurrentTrack
                        ? (Kirigami.Theme.highlightColor || "#3daee9")
-                       : (Kirigami.Theme.textColor || "#000000")
+                       : Qt.rgba(1, 1, 1, 0.92)
 
-                Behavior on color { ColorAnimation { duration: 150 } }
+                Behavior on color { ColorAnimation { duration: 160 } }
             }
             Controls.Label {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: (root.trackData && root.trackData.artist) ? root.trackData.artist : ""
-                color: Kirigami.Theme.disabledTextColor || "#888888"
+                color: Qt.rgba(1, 1, 1, 0.45)
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
                 visible: text.length > 0
             }
         }
 
-        // Duration — fixed-width tabular style
+        // ── Duration — tabular mono ────────────────────────────────────────
         Controls.Label {
             Layout.preferredWidth: 44
             horizontalAlignment: Text.AlignRight
@@ -176,13 +252,13 @@ Item {
                 var seconds = totalSec % 60
                 return minutes + ":" + (seconds < 10 ? "0" : "") + seconds
             }
-            color: Kirigami.Theme.disabledTextColor || "#888888"
+            color: Qt.rgba(1, 1, 1, 0.38)
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
             font.features: { "tnum": 1 }
         }
     }
 
-    // ── Click handler ───────────────────────────────────────────────────────
+    // ── Click handler ─────────────────────────────────────────────────────
     MouseArea {
         id: delegateHover
         anchors.fill: parent

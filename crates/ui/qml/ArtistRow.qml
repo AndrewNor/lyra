@@ -1,5 +1,4 @@
-// ArtistRow.qml — a single row in the Artists list view.
-// Shows artist name, album count, and track count.
+// ArtistRow.qml — premium artist row (Apple Music / Spotify tier)
 
 import QtQuick
 import QtQuick.Controls as Controls
@@ -13,80 +12,70 @@ Item {
 
     signal rowClicked()
 
-    height: 60
+    height: 68
 
-    // ── Background ──────────────────────────────────────────────────────────
+    // ── Background hover ──────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        color: {
-            var tc = Kirigami.Theme.textColor
-            return (rowHover.containsMouse && tc)
-                   ? Qt.rgba(tc.r, tc.g, tc.b, 0.05)
-                   : "transparent"
-        }
+        color: rowHover.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
 
         Behavior on color { ColorAnimation { duration: 120 } }
     }
 
-    // ── Bottom separator ────────────────────────────────────────────────────
+    // ── Bottom separator ──────────────────────────────────────────────────
     Rectangle {
         anchors.bottom: parent.bottom
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: Kirigami.Units.largeSpacing + 54
+        anchors.leftMargin: Kirigami.Units.largeSpacing + 58
         height: 1
-        color: Kirigami.Theme.separatorColor || "#e0e0e0"
-        opacity: 0.35
+        color: Qt.rgba(1, 1, 1, 0.07)
     }
 
-    // ── Content ─────────────────────────────────────────────────────────────
     RowLayout {
         anchors.fill: parent
         anchors.leftMargin: Kirigami.Units.largeSpacing
         anchors.rightMargin: Kirigami.Units.largeSpacing
-        spacing: Kirigami.Units.largeSpacing - 2
+        spacing: Kirigami.Units.largeSpacing
 
-        // Avatar circle
+        // ── Avatar circle ──────────────────────────────────────────────────
         Item {
-            width: 44
-            height: 44
+            width: 48
+            height: 48
 
-            // Shadow
+            // Shadow layers
             Rectangle {
                 anchors.centerIn: parent
-                width: parent.width + 2
-                height: parent.height + 2
-                anchors.verticalCenterOffset: 2
-                radius: (parent.width + 2) / 2
-                color: {
-                    var tc = Kirigami.Theme.textColor
-                    return tc ? Qt.rgba(tc.r, tc.g, tc.b, 0.10) : "#00000010"
-                }
+                width: parent.width + 4
+                height: parent.height + 4
+                anchors.verticalCenterOffset: 4
+                radius: (parent.width + 4) / 2
+                color: "#000000"
+                opacity: 0.35
             }
 
             Rectangle {
                 anchors.fill: parent
                 radius: parent.width / 2
-                color: {
-                    var hc = Kirigami.Theme.highlightColor
-                    var ac = Kirigami.Theme.alternateBackgroundColor
-                    return ac || "#f0f0f0"
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.rgba(0.22, 0.22, 0.32, 1.0) }
+                    GradientStop { position: 1.0; color: Qt.rgba(0.12, 0.12, 0.20, 1.0) }
                 }
 
                 Kirigami.Icon {
                     anchors.centerIn: parent
                     source: "user-identity"
-                    width: 22
-                    height: 22
-                    color: Kirigami.Theme.disabledTextColor || "#888888"
+                    width: 24
+                    height: 24
+                    color: Qt.rgba(1, 1, 1, 0.35)
                 }
             }
         }
 
-        // Name + stats
+        // ── Name + stats ───────────────────────────────────────────────────
         ColumnLayout {
             Layout.fillWidth: true
-            spacing: 2
+            spacing: 3
 
             Controls.Label {
                 Layout.fillWidth: true
@@ -94,9 +83,9 @@ Item {
                 text: (root.artistData && root.artistData.name)
                       ? root.artistData.name
                       : "(unknown)"
-                font.weight: Font.Medium
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.97
-                color: Kirigami.Theme.textColor || "#000000"
+                font.weight: Font.SemiBold
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.00
+                color: Qt.rgba(1, 1, 1, 0.92)
             }
 
             Controls.Label {
@@ -110,24 +99,22 @@ Item {
                            + "  ·  "
                            + tc + (tc === 1 ? " track" : " tracks")
                 }
-                color: Kirigami.Theme.disabledTextColor || "#888888"
+                color: Qt.rgba(1, 1, 1, 0.42)
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
             }
         }
 
-        // Disclosure chevron
+        // ── Disclosure chevron ─────────────────────────────────────────────
         Kirigami.Icon {
             source: "arrow-right"
             width: 14
             height: 14
-            color: Kirigami.Theme.disabledTextColor || "#888888"
-            opacity: rowHover.containsMouse ? 0.9 : 0.45
+            color: Qt.rgba(1, 1, 1, rowHover.containsMouse ? 0.70 : 0.28)
 
-            Behavior on opacity { NumberAnimation { duration: 120 } }
+            Behavior on color { ColorAnimation { duration: 120 } }
         }
     }
 
-    // ── Click / hover handler ───────────────────────────────────────────────
     MouseArea {
         id: rowHover
         anchors.fill: parent
