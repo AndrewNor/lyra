@@ -33,6 +33,7 @@ Kirigami.ApplicationWindow {
     Component.onCompleted: {
         library.loadAll()
         library.loadPlaylists()
+        library.loadSmartPlaylists()
         player.initMpris()
     }
 
@@ -40,6 +41,7 @@ Kirigami.ApplicationWindow {
     property string view: "songs"
     property string detailName: ""
     property int detailPlaylistId: -1
+    property int detailSmartPlaylistId: -1
 
     // ── Position polling timer ──────────────────────────────────────────────
     Timer {
@@ -89,6 +91,12 @@ Kirigami.ApplicationWindow {
 
     property var playlists: {
         var s = library.playlists_json
+        if (!s || s.length === 0) return []
+        try { return JSON.parse(s) } catch(e) { return [] }
+    }
+
+    property var smartPlaylists: {
+        var s = library.smart_playlists_json
         if (!s || s.length === 0) return []
         try { return JSON.parse(s) } catch(e) { return [] }
     }
@@ -206,6 +214,175 @@ Kirigami.ApplicationWindow {
         onRejected: {
             renamePlaylistField.text = ""
             root.renamePlaylistId = -1
+        }
+    }
+
+    // ── Smart Playlist rule-builder dialog ────────────────────────────────────
+
+    // Internal rule model: [{field, op, value}]
+    property var _spRules: [{"field":"genre","op":"is","value":""}]
+    property bool _spMatchAll: true
+
+    Controls.Dialog {
+        id: newSmartPlaylistDialog
+        title: "New Smart Playlist"
+        modal: true
+        x: Math.round((root.width - width) / 2)
+        y: Math.round((root.height - height) / 2)
+        width: 480
+        standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+
+        ColumnLayout {
+            width: parent.width
+            spacing: 10
+
+            // Name field
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Controls.Label { text: "Name:"; color: root.textPrimary; Layout.preferredWidth: 60 }
+                Controls.TextField {
+                    id: spNameField
+                    Layout.fillWidth: true
+                    placeholderText: "Playlist name"
+                    color: root.textPrimary
+                    background: Rectangle { color: Qt.rgba(1,1,1,0.08); radius: 6 }
+                }
+            }
+
+            // Match all / any
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+                Controls.Label { text: "Match:"; color: root.textPrimary; Layout.preferredWidth: 60 }
+                Controls.ComboBox {
+                    id: spMatchCombo
+                    model: ["All rules (AND)", "Any rule (OR)"]
+                    currentIndex: 0
+                    implicitWidth: 160
+                    onCurrentIndexChanged: root._spMatchAll = (currentIndex === 0)
+                }
+            }
+
+            // Rule rows (up to 4)
+            Repeater {
+                id: spRuleRepeater
+                model: root._spRules
+
+                delegate: RowLayout {
+                    required property var modelData
+                    required property int index
+                    Layout.fillWidth: true
+                    spacing: 6
+
+                    Controls.ComboBox {
+                        id: spFieldCombo
+                        model: ["title","artist","album","genre","year"]
+                        currentIndex: {
+                            var f = modelData ? modelData.field : "genre"
+                            var idx = model.indexOf(f)
+                            return idx >= 0 ? idx : 3
+                        }
+                        implicitWidth: 90
+                        onActivated: {
+                            var rules = root._spRules.slice()
+                            rules[index] = {"field": currentText, "op": rules[index].op, "value": rules[index].value}
+                            root._spRules = rules
+                        }
+                    }
+
+                    Controls.ComboBox {
+                        id: spOpCombo
+                        model: {
+                            var f = modelData ? modelData.field : "genre"
+                            if (f === "year") return ["is",">","<"]
+                            return ["contains","is"]
+                        }
+                        currentIndex: {
+                            var op = modelData ? modelData.op : "is"
+                            var ops = spOpCombo.model
+                            var idx = ops.indexOf(op)
+                            return idx >= 0 ? idx : 0
+                        }
+                        implicitWidth: 90
+                        onActivated: {
+                            var rules = root._spRules.slice()
+                            var opVal = currentText === ">" ? "gt" : (currentText === "<" ? "lt" : currentText)
+                            rules[index] = {"field": rules[index].field, "op": opVal, "value": rules[index].value}
+                            root._spRules = rules
+                        }
+                    }
+
+                    Controls.TextField {
+                        id: spValueField
+                        Layout.fillWidth: true
+                        text: modelData ? (modelData.value || "") : ""
+                        placeholderText: "value"
+                        color: root.textPrimary
+                        background: Rectangle { color: Qt.rgba(1,1,1,0.08); radius: 6 }
+                        onTextChanged: {
+                            var rules = root._spRules.slice()
+                            rules[index] = {"field": rules[index].field, "op": rules[index].op, "value": text}
+                            root._spRules = rules
+                        }
+                    }
+
+                    Controls.ToolButton {
+                        text: "×"
+                        font.bold: true
+                        visible: root._spRules.length > 1
+                        flat: true
+                        padding: 2
+                        implicitWidth: 22
+                        implicitHeight: 22
+                        onClicked: {
+                            var rules = root._spRules.slice()
+                            rules.splice(index, 1)
+                            root._spRules = rules
+                        }
+                    }
+                }
+            }
+
+            // Add rule button (max 4)
+            Controls.Button {
+                text: "+ Add Rule"
+                visible: root._spRules.length < 4
+                flat: true
+                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                onClicked: {
+                    var rules = root._spRules.slice()
+                    rules.push({"field":"genre","op":"is","value":""})
+                    root._spRules = rules
+                }
+            }
+        }
+
+        onOpened: {
+            spNameField.text = ""
+            spMatchCombo.currentIndex = 0
+            root._spMatchAll = true
+            root._spRules = [{"field":"genre","op":"is","value":""}]
+        }
+
+        onAccepted: {
+            var n = spNameField.text.trim()
+            if (n.length === 0) return
+
+            // Build rules_json — map display op back to canonical op strings
+            var rules = []
+            for (var i = 0; i < root._spRules.length; i++) {
+                var r = root._spRules[i]
+                if (!r || !r.value || r.value.trim() === "") continue
+                var op = r.op
+                // map display values to canonical
+                if (op === ">") op = "gt"
+                else if (op === "<") op = "lt"
+                rules.push({"field": r.field.toLowerCase(), "op": op.toLowerCase(), "value": r.value})
+            }
+            if (rules.length === 0) return
+            var rulesJson = JSON.stringify(rules)
+            library.createSmartPlaylist(n, rulesJson, root._spMatchAll)
         }
     }
 
@@ -905,6 +1082,82 @@ Kirigami.ApplicationWindow {
                         color: root.sepColor
                     }
 
+                    // Smart Playlists section header + New button
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 20
+                        Layout.rightMargin: 8
+                        Layout.topMargin: 4
+                        Layout.bottomMargin: 4
+                        spacing: 0
+
+                        Controls.Label {
+                            Layout.fillWidth: true
+                            text: "Smart Playlists"
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
+                            color: root.textFaint
+                            font.capitalization: Font.AllUppercase
+                            font.letterSpacing: 1.4
+                            font.weight: Font.Medium
+                        }
+
+                        Controls.ToolButton {
+                            text: "+"
+                            font.bold: true
+                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
+                            implicitHeight: 20
+                            implicitWidth: 22
+                            opacity: 0.60
+                            flat: true
+                            padding: 0
+                            Controls.ToolTip.visible: hovered
+                            Controls.ToolTip.text: "New smart playlist"
+                            Controls.ToolTip.delay: 400
+                            onClicked: {
+                                newSmartPlaylistDialog.open()
+                            }
+                        }
+                    }
+
+                    // Smart playlists from db
+                    Repeater {
+                        model: root.smartPlaylists
+                        delegate: SidebarItem {
+                            required property var modelData
+                            iconName: "view-filter"
+                            label: modelData ? (modelData.name || "Untitled") : ""
+                            active: root.view === "smart_detail" && root.detailSmartPlaylistId === (modelData ? modelData.id : -1)
+                            onActivated: {
+                                if (!modelData) return
+                                root.detailName = modelData.name || ""
+                                root.detailSmartPlaylistId = modelData.id
+                                library.loadSmartPlaylistTracks(modelData.id)
+                                root.view = "smart_detail"
+                            }
+                        }
+                    }
+
+                    // "No smart playlists" hint when empty
+                    Controls.Label {
+                        visible: root.smartPlaylists.length === 0
+                        Layout.leftMargin: 20
+                        text: "No smart playlists"
+                        font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.72
+                        color: root.textFaint
+                        font.italic: true
+                    }
+
+                    // Separator
+                    Rectangle {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        Layout.bottomMargin: 8
+                        Layout.leftMargin: 14
+                        Layout.rightMargin: 14
+                        height: 1
+                        color: root.sepColor
+                    }
+
                     // Sources section header
                     Controls.Label {
                         Layout.leftMargin: 20
@@ -955,6 +1208,7 @@ Kirigami.ApplicationWindow {
                              || root.view === "genre_detail"
                              || root.view === "playlist_detail"
                              || root.view === "recently"
+                             || root.view === "smart_detail"
 
                     ColumnLayout {
                         anchors.fill: parent
@@ -967,13 +1221,15 @@ Kirigami.ApplicationWindow {
                                      || root.view === "artist_detail"
                                      || root.view === "genre_detail"
                                      || root.view === "playlist_detail"
-                                     || root.view === "recently")
+                                     || root.view === "recently"
+                                     || root.view === "smart_detail")
                                     ? 48 : 0
                             visible: root.view === "album_detail"
                                      || root.view === "artist_detail"
                                      || root.view === "genre_detail"
                                      || root.view === "playlist_detail"
                                      || root.view === "recently"
+                                     || root.view === "smart_detail"
                             clip: true
 
                             Rectangle {
@@ -993,6 +1249,7 @@ Kirigami.ApplicationWindow {
                                         if (root.view === "genre_detail") return "‹ Genres"
                                         if (root.view === "playlist_detail") return "‹ Playlists"
                                         if (root.view === "recently") return "‹ Library"
+                                        if (root.view === "smart_detail") return "‹ Smart Playlists"
                                         return "‹ Artists"
                                     }
                                     onClicked: {
@@ -1004,7 +1261,11 @@ Kirigami.ApplicationWindow {
                                             root.view = "songs"
                                         else if (root.view === "recently")
                                             root.view = "songs"
-                                        else
+                                        else if (root.view === "smart_detail") {
+                                            root.view = "songs"
+                                            root.detailSmartPlaylistId = -1
+                                            root.detailName = ""
+                                        } else
                                             root.view = "artists"
                                     }
                                 }
@@ -1016,6 +1277,16 @@ Kirigami.ApplicationWindow {
                                     font.bold: true
                                     font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.08
                                     color: root.textPrimary
+                                }
+
+                                // Smart playlist indicator icon
+                                Kirigami.Icon {
+                                    visible: root.view === "smart_detail"
+                                    source: "view-filter"
+                                    width: 16
+                                    height: 16
+                                    color: root.accentColor
+                                    opacity: 0.75
                                 }
 
                                 // Playlist-specific actions (rename / delete)
@@ -1042,6 +1313,20 @@ Kirigami.ApplicationWindow {
                                         library.deletePlaylist(root.detailPlaylistId)
                                         root.view = "songs"
                                         root.detailPlaylistId = -1
+                                        root.detailName = ""
+                                    }
+                                }
+
+                                Controls.ToolButton {
+                                    visible: root.view === "smart_detail"
+                                    icon.name: "edit-delete"
+                                    Controls.ToolTip.visible: hovered
+                                    Controls.ToolTip.text: "Delete smart playlist"
+                                    Controls.ToolTip.delay: 400
+                                    onClicked: {
+                                        library.deleteSmartPlaylist(root.detailSmartPlaylistId)
+                                        root.view = "songs"
+                                        root.detailSmartPlaylistId = -1
                                         root.detailName = ""
                                     }
                                 }

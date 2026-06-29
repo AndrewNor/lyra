@@ -25,6 +25,7 @@ pub mod qobject {
         #[qproperty(QString, artists_json)]
         #[qproperty(QString, genres_json)]
         #[qproperty(QString, playlists_json)]
+        #[qproperty(QString, smart_playlists_json)]
         type Library = super::LibraryRust;
 
         /// Load all tracks from the db → resultsJson + trackCount.
@@ -122,6 +123,31 @@ pub mod qobject {
             artist: QString,
             album: QString,
         );
+
+        /// Load all smart playlists → smart_playlists_json [{id,name}].
+        #[qinvokable]
+        #[cxx_name = "loadSmartPlaylists"]
+        fn load_smart_playlists(self: Pin<&mut Library>);
+
+        /// Create a new smart playlist, then reload smart_playlists_json.
+        #[qinvokable]
+        #[cxx_name = "createSmartPlaylist"]
+        fn create_smart_playlist(
+            self: Pin<&mut Library>,
+            name: QString,
+            rules_json: QString,
+            match_all: bool,
+        );
+
+        /// Evaluate a smart playlist's rules → results_json.
+        #[qinvokable]
+        #[cxx_name = "loadSmartPlaylistTracks"]
+        fn load_smart_playlist_tracks(self: Pin<&mut Library>, id: i64);
+
+        /// Delete a smart playlist by id, then reload smart_playlists_json.
+        #[qinvokable]
+        #[cxx_name = "deleteSmartPlaylist"]
+        fn delete_smart_playlist(self: Pin<&mut Library>, id: i64);
     }
 
     impl cxx_qt::Threading for Library {}
@@ -130,7 +156,7 @@ pub mod qobject {
 use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
-use lyra_db::{Album, Artist, Db, Genre, NewTrack, Playlist, Track};
+use lyra_db::{Album, Artist, Db, Genre, NewTrack, Playlist, SmartPlaylist, Track};
 
 use crate::paths::{art_cache_dir, library_db_path};
 
@@ -145,6 +171,7 @@ pub struct LibraryRust {
     artists_json: QString,
     genres_json: QString,
     playlists_json: QString,
+    smart_playlists_json: QString,
 
     /// Live database connection (Qt thread only).
     db: Db,
@@ -192,6 +219,7 @@ impl Default for LibraryRust {
             artists_json: QString::from("[]"),
             genres_json: QString::from("[]"),
             playlists_json: QString::from("[]"),
+            smart_playlists_json: QString::from("[]"),
             db,
             music_dir,
         }
@@ -278,6 +306,20 @@ pub(crate) fn playlists_to_json(playlists: &[Playlist]) -> String {
                 "id": p.id,
                 "name": p.name,
                 "track_count": p.track_count,
+            })
+        })
+        .collect();
+    serde_json::to_string(&values).unwrap_or_else(|_| "[]".to_owned())
+}
+
+/// Build a JSON array string from a slice of `SmartPlaylist`s.
+pub(crate) fn smart_playlists_to_json(sps: &[SmartPlaylist]) -> String {
+    let values: Vec<serde_json::Value> = sps
+        .iter()
+        .map(|sp| {
+            serde_json::json!({
+                "id":   sp.id,
+                "name": sp.name,
             })
         })
         .collect();
@@ -722,6 +764,82 @@ impl qobject::Library {
             }
             Err(e) => {
                 let msg = format!("loadRecentlyAdded error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_smart_playlists(mut self: Pin<&mut Self>) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .list_smart_playlists();
+        match result {
+            Ok(sps) => {
+                let json = smart_playlists_to_json(&sps);
+                self.as_mut()
+                    .set_smart_playlists_json(QString::from(json.as_str()));
+                let msg = format!("{} smart playlists", sps.len());
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadSmartPlaylists error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn create_smart_playlist(
+        mut self: Pin<&mut Self>,
+        name: QString,
+        rules_json: QString,
+        match_all: bool,
+    ) {
+        let name_str = name.to_string();
+        let rules_str = rules_json.to_string();
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .create_smart_playlist(&name_str, &rules_str, match_all);
+        match result {
+            Ok(_) => {
+                self.load_smart_playlists();
+            }
+            Err(e) => {
+                let msg = format!("createSmartPlaylist error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn load_smart_playlist_tracks(mut self: Pin<&mut Self>, id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .smart_playlist_tracks(id);
+        match result {
+            Ok(tracks) => {
+                let count = tracks.len() as i32;
+                let json = tracks_to_json(&tracks);
+                self.as_mut().set_results_json(QString::from(json.as_str()));
+                self.as_mut().set_track_count(count);
+                let msg = format!("{count} tracks");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+            Err(e) => {
+                let msg = format!("loadSmartPlaylistTracks error: {e}");
+                self.as_mut().set_status_text(QString::from(msg.as_str()));
+            }
+        }
+    }
+
+    fn delete_smart_playlist(mut self: Pin<&mut Self>, id: i64) {
+        let result = unsafe { self.as_mut().rust_mut().get_unchecked_mut() }
+            .db
+            .delete_smart_playlist(id);
+        match result {
+            Ok(_) => {
+                self.load_smart_playlists();
+            }
+            Err(e) => {
+                let msg = format!("deleteSmartPlaylist error: {e}");
                 self.as_mut().set_status_text(QString::from(msg.as_str()));
             }
         }
