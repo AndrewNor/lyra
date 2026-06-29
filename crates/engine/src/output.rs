@@ -4,6 +4,9 @@
 //! `rtrb::Consumer`.  It must not allocate, lock, block, or log.  On
 //! underrun it writes silence (0.0).
 
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, HostId, Stream, StreamConfig};
 use rtrb::Consumer;
@@ -57,18 +60,41 @@ impl OutputDevice {
 ///
 /// The callback is RT-safe: it only calls `consumer.pop()` (lock-free,
 /// wait-free) and fills the output buffer.
+///
+/// `frames_played` is incremented by the number of frames **actually popped
+/// from the ring buffer** (not silence-fill frames).  This keeps the reported
+/// position aligned with audible output: silence-fill is buffer underrun, not
+/// real content, so it must not advance the position counter.
 pub(crate) fn build_output_stream(
     out: &OutputDevice,
     mut consumer: Consumer<f32>,
+    frames_played: Arc<AtomicU64>,
+    channels: u16,
 ) -> crate::Result<Stream> {
+    let ch = channels as u64;
+
     let stream = out
         .device
         .build_output_stream(
             out.config.clone(),
             // ---- RT callback: no alloc / lock / IO / log ----
             move |buf: &mut [f32], _info: &cpal::OutputCallbackInfo| {
+                let mut real_samples: u64 = 0;
                 for sample in buf.iter_mut() {
-                    *sample = consumer.pop().unwrap_or(0.0);
+                    match consumer.pop() {
+                        Ok(s) => {
+                            *sample = s;
+                            real_samples += 1;
+                        }
+                        Err(_) => {
+                            // Underrun: fill with silence; do NOT advance counter.
+                            *sample = 0.0;
+                        }
+                    }
+                }
+                // Accumulate frames (interleaved samples / channel count).
+                if ch > 0 && real_samples > 0 {
+                    frames_played.fetch_add(real_samples / ch, Ordering::Relaxed);
                 }
             },
             // ---- error callback (called from a non-RT context) ----
