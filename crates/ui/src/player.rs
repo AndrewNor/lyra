@@ -22,6 +22,10 @@ pub mod qobject {
         #[qproperty(QString, current_artist)]
         #[qproperty(QString, current_cover_thumb)]
         #[qproperty(QString, queue_json)]
+        /// Current playback position in seconds (updated by `refreshPosition`).
+        #[qproperty(f64, position_secs)]
+        /// Total duration of the current track in seconds (set when a track starts).
+        #[qproperty(f64, duration_secs)]
         type Player = super::PlayerRust;
 
         /// Start playback of `path`.  Lazily opens the audio device on first call.
@@ -56,6 +60,18 @@ pub mod qobject {
         /// Stop playback and release resources.
         #[qinvokable]
         fn stop(self: Pin<&mut Player>);
+
+        /// Poll the engine for the current position and update `position_secs`.
+        /// Call this from a QML `Timer` (e.g. every 250 ms while playing).
+        #[qinvokable]
+        #[cxx_name = "refreshPosition"]
+        fn refresh_position(self: Pin<&mut Player>);
+
+        /// Seek to a fractional position (0.0 = start, 1.0 = end).
+        /// Best-effort: if the engine seek is a no-op the call is silently ignored.
+        #[qinvokable]
+        #[cxx_name = "seek"]
+        fn seek(self: Pin<&mut Player>, fraction: f64);
     }
 }
 
@@ -74,6 +90,7 @@ struct TrackRow {
     artist: String,
     path: String,
     cover_thumb: String,
+    duration_ms: u64,
 }
 
 // ── Backing struct ───────────────────────────────────────────────────────────
@@ -84,6 +101,12 @@ pub struct PlayerRust {
     current_artist: QString,
     current_cover_thumb: QString,
     queue_json: QString,
+
+    /// Current playback position in seconds (polled from the engine).
+    position_secs: f64,
+
+    /// Duration of the current track in seconds (set when a track starts).
+    duration_secs: f64,
 
     /// Lazily initialised on first `play()`.  `!Send` — Qt thread only.
     engine: Option<Engine>,
@@ -103,6 +126,8 @@ impl Default for PlayerRust {
             current_artist: QString::from(""),
             current_cover_thumb: QString::from(""),
             queue_json: QString::from("[]"),
+            position_secs: 0.0,
+            duration_secs: 0.0,
             engine: None,
             play_queue: PlayQueue::new(),
             playlist: Vec::new(),
@@ -127,10 +152,11 @@ fn parse_playlist(json: &str) -> Vec<TrackRow> {
             let artist = v["artist"].as_str().unwrap_or("").to_owned();
             let path = v["path"].as_str().unwrap_or("").to_owned();
             let cover_thumb = v["cover_thumb"].as_str().unwrap_or("").to_owned();
+            let duration_ms = v["durationMs"].as_u64().unwrap_or(0);
             if path.is_empty() {
                 return None;
             }
-            Some(TrackRow { id, title, artist, path, cover_thumb })
+            Some(TrackRow { id, title, artist, path, cover_thumb, duration_ms })
         })
         .collect()
 }
@@ -192,8 +218,15 @@ impl qobject::Player {
         true
     }
 
-    /// Internal: play a path string, update title/artist/cover/state properties.
-    fn play_row(mut self: Pin<&mut Self>, path: &str, title: &str, artist: &str, cover_thumb: &str) {
+    /// Internal: play a path string, update title/artist/cover/state/duration properties.
+    fn play_row(
+        mut self: Pin<&mut Self>,
+        path: &str,
+        title: &str,
+        artist: &str,
+        cover_thumb: &str,
+        duration_ms: u64,
+    ) {
         if !self.as_mut().ensure_engine() {
             return;
         }
@@ -210,6 +243,9 @@ impl qobject::Player {
                 self.as_mut().set_current_artist(QString::from(artist));
                 self.as_mut().set_current_cover_thumb(QString::from(cover_thumb));
                 self.as_mut().set_state_text(QString::from("Playing"));
+                // Reset position and set duration for the new track.
+                self.as_mut().set_position_secs(0.0);
+                self.as_mut().set_duration_secs(duration_ms as f64 / 1000.0);
             }
             Some(Err(e)) => {
                 let msg = format!("Play error: {e}");
@@ -226,7 +262,8 @@ impl qobject::Player {
         let path_s = path.to_string();
         let title_s = title.to_string();
         let artist_s = artist.to_string();
-        self.as_mut().play_row(&path_s, &title_s, &artist_s, "");
+        // Duration unknown when playing via the direct `play()` invokable.
+        self.as_mut().play_row(&path_s, &title_s, &artist_s, "", 0);
     }
 
     fn play_from_list(mut self: Pin<&mut Self>, results_json: QString, index: i32) {
@@ -261,13 +298,14 @@ impl qobject::Player {
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
 
-        let (path, title, artist, cover) = (
+        let (path, title, artist, cover, dur_ms) = (
             row.path.clone(),
             row.title.clone(),
             row.artist.clone(),
             row.cover_thumb.clone(),
+            row.duration_ms,
         );
-        self.as_mut().play_row(&path, &title, &artist, &cover);
+        self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
     }
 
     fn next(mut self: Pin<&mut Self>) {
@@ -284,7 +322,7 @@ impl qobject::Player {
         };
 
         // Resolve id → row from cached playlist.
-        let (path, title, artist, cover, queue_json) = {
+        let (path, title, artist, cover, dur_ms, queue_json) = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             let playlist = &r.playlist;
             let Some(row) = find_row(playlist, id) else {
@@ -296,13 +334,14 @@ impl qobject::Player {
                 row.title.clone(),
                 row.artist.clone(),
                 row.cover_thumb.clone(),
+                row.duration_ms,
                 qj,
             )
         };
 
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
-        self.as_mut().play_row(&path, &title, &artist, &cover);
+        self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
     }
 
     fn prev(mut self: Pin<&mut Self>) {
@@ -319,7 +358,7 @@ impl qobject::Player {
         };
 
         // Resolve id → row from cached playlist.
-        let (path, title, artist, cover, queue_json) = {
+        let (path, title, artist, cover, dur_ms, queue_json) = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             let playlist = &r.playlist;
             let Some(row) = find_row(playlist, id) else {
@@ -331,13 +370,14 @@ impl qobject::Player {
                 row.title.clone(),
                 row.artist.clone(),
                 row.cover_thumb.clone(),
+                row.duration_ms,
                 qj,
             )
         };
 
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
-        self.as_mut().play_row(&path, &title, &artist, &cover);
+        self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
     }
 
     fn pause(mut self: Pin<&mut Self>) {
@@ -381,5 +421,32 @@ impl qobject::Player {
         self.as_mut().set_current_title(QString::from(""));
         self.as_mut().set_current_artist(QString::from(""));
         self.as_mut().set_current_cover_thumb(QString::from(""));
+        self.as_mut().set_position_secs(0.0);
+        self.as_mut().set_duration_secs(0.0);
+    }
+
+    fn refresh_position(mut self: Pin<&mut Self>) {
+        let pos = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            r.engine.as_ref().map(|e| e.position_secs()).unwrap_or(0.0)
+        };
+        self.as_mut().set_position_secs(pos);
+    }
+
+    fn seek(mut self: Pin<&mut Self>, fraction: f64) {
+        let clamped = fraction.clamp(0.0, 1.0);
+        let target_secs = {
+            let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+            let dur = r.duration_secs;
+            let secs = clamped * dur;
+            // Call seek on the engine; ignore errors (seek is best-effort).
+            if let Some(e) = r.engine.as_mut() {
+                let _ = e.seek(secs);
+            }
+            secs
+        };
+        // Update position display immediately so the UI feels responsive,
+        // even though the engine seek may be a no-op.
+        self.as_mut().set_position_secs(target_secs);
     }
 }
