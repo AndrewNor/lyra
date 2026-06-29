@@ -1,4 +1,5 @@
 //! Smoke-test example: play a file for up to 8 seconds, then stop.
+//! Prints playback position once per second so advancing position can be confirmed.
 //!
 //! Usage:
 //!   cargo run -p lyra-engine --example play -- /path/to/file.mp3
@@ -23,8 +24,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("[play] Playing: {}", path.display());
     engine.play(path)?;
     println!("[play] Playback started, state: {:?}", engine.state());
+    println!("[play] Sample rate: {} Hz", engine.device_sample_rate());
 
-    thread::sleep(Duration::from_secs(8));
+    // Poll position once per second for up to 8 seconds.
+    for i in 1..=8u64 {
+        thread::sleep(Duration::from_secs(1));
+        let pos = engine.position_secs();
+        println!("[play] position: {:.2}s (tick {})", pos, i);
+    }
 
     engine.stop();
     println!("[play] Stopped. Final state: {:?}", engine.state());

@@ -10,7 +10,7 @@ mod decode_loop;
 mod output;
 
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use cpal::traits::StreamTrait;
@@ -74,6 +74,11 @@ pub struct Engine {
 
     /// Shared flag: when set to `true` the decode thread spin-waits.
     paused_flag: Arc<AtomicBool>,
+
+    /// Frames played counter — incremented in the RT callback using only
+    /// samples actually popped from the ring buffer (not silence-fill).
+    /// Reset to 0 at the start of every `play()`.
+    frames_played: Arc<AtomicU64>,
 }
 
 impl Engine {
@@ -90,6 +95,7 @@ impl Engine {
             decode_thread: None,
             stop_flag: Arc::new(AtomicBool::new(false)),
             paused_flag: Arc::new(AtomicBool::new(false)),
+            frames_played: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -103,6 +109,9 @@ impl Engine {
         // Stop any existing playback cleanly.
         self.stop_internal();
 
+        // Reset the position counter for the new track.
+        self.frames_played.store(0, Ordering::Relaxed);
+
         // Fresh stop/pause flags.
         let stop_flag = Arc::new(AtomicBool::new(false));
         let paused_flag = Arc::new(AtomicBool::new(false));
@@ -111,7 +120,12 @@ impl Engine {
         let (producer, consumer) = RingBuffer::<f32>::new(RING_BUFFER_SAMPLES);
 
         // Build and start the cpal output stream (consumer end).
-        let stream = build_output_stream(&self.out, consumer)?;
+        let stream = build_output_stream(
+            &self.out,
+            consumer,
+            Arc::clone(&self.frames_played),
+            self.out.channels,
+        )?;
 
         // Spawn the decode thread (producer end).
         let decode_thread = DecodeThread::spawn(
@@ -152,6 +166,48 @@ impl Engine {
     /// Stop playback and release resources.
     pub fn stop(&mut self) {
         self.stop_internal();
+    }
+
+    /// Return the current playback position in seconds.
+    ///
+    /// Computed from the frames-played atomic counter (incremented in the RT
+    /// callback for samples actually popped from the ring buffer — silence-fill
+    /// on underrun is excluded so the position stays aligned with audible audio).
+    /// Returns 0.0 when stopped.
+    pub fn position_secs(&self) -> f64 {
+        let frames = self.frames_played.load(Ordering::Relaxed);
+        let rate = self.out.sample_rate as f64;
+        if rate > 0.0 { frames as f64 / rate } else { 0.0 }
+    }
+
+    /// Return the device sample rate in Hz.
+    pub fn device_sample_rate(&self) -> u32 {
+        self.out.sample_rate
+    }
+
+    /// Seek to `secs` seconds into the current track (best-effort).
+    ///
+    /// # Current status — DEFERRED (no-op)
+    ///
+    /// Interactive seek requires:
+    ///   1. A command channel to the decode thread (not yet present).
+    ///   2. Draining / resetting the `rtrb` ring buffer so stale decoded audio
+    ///      does not play through after the seek point.
+    ///   3. Calling `symphonia::FormatReader::seek()` on the decode thread.
+    ///
+    /// The ring buffer is split at construction time — the consumer end lives
+    /// inside the cpal callback closure and there is no safe way to drain or
+    /// replace it without rebuilding the stream.  Doing so cleanly requires a
+    /// non-trivial refactor of the decode-loop/output architecture.
+    ///
+    /// Rather than risk destabilising the working engine, this is intentionally
+    /// left as a no-op.  The position display (A1) is fully functional.
+    ///
+    /// TODO: interactive seek — add a `SeekCmd` channel to `DecodeThread`,
+    ///       rebuild the ring-buffer pair on seek, restart the stream.
+    pub fn seek(&mut self, _secs: f64) -> Result<()> {
+        // No-op: see doc comment above.
+        Ok(())
     }
 
     // ── Internal helpers ─────────────────────────────────────────────────────

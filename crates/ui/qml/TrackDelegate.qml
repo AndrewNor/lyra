@@ -113,7 +113,7 @@ Item {
             Controls.Label {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
-                text: (root.trackData && root.trackData.title && root.trackData.title.length > 0)
+                text: (root.trackData && root.trackData.title && root.trackData.title.trim().length > 0)
                       ? root.trackData.title
                       : "(untitled)"
                 font.bold: root.isCurrentTrack

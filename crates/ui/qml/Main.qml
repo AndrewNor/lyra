@@ -19,6 +19,25 @@ Kirigami.ApplicationWindow {
 
     Component.onCompleted: library.loadAll()
 
+    // ── Position polling timer (250 ms while Playing) ────────────────────────
+    Timer {
+        id: positionTimer
+        interval: 250
+        running: player.state_text === "Playing"
+        repeat: true
+        onTriggered: player.refreshPosition()
+    }
+
+    // ── m:ss formatter (guards NaN / negative) ───────────────────────────────
+    function fmtTime(s) {
+        var n = s || 0
+        if (isNaN(n) || n < 0) n = 0
+        var totalSec = Math.floor(n)
+        var minutes  = Math.floor(totalSec / 60)
+        var seconds  = totalSec % 60
+        return minutes + ":" + (seconds < 10 ? "0" : "") + seconds
+    }
+
     // ── State: right panel visibility ────────────────────────────────────────
     property bool nowPlayingVisible: true
 
@@ -90,13 +109,25 @@ Kirigami.ApplicationWindow {
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.9
             }
 
+            // Only show status_text when it carries transient/meaningful info
+            // (e.g. while scanning or right after a scan), not when it merely
+            // duplicates the track count already shown above.
             Controls.Label {
                 text: library.status_text || ""
                 color: Kirigami.Theme.disabledTextColor || "#888888"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
                 elide: Text.ElideRight
                 Layout.maximumWidth: 200
-                visible: text.length > 0
+                visible: {
+                    var st = library.status_text || ""
+                    if (st.length === 0) return false
+                    // Hide if it looks like "N tracks" (same as the count label)
+                    var countStr = (library.track_count || 0) + " tracks"
+                    if (st === countStr) return false
+                    // Hide generic idle states
+                    if (st === "Ready" || st === "Idle") return false
+                    return true
+                }
             }
 
             Rectangle {
@@ -267,24 +298,29 @@ Kirigami.ApplicationWindow {
                 Layout.preferredWidth: 240
                 spacing: 4
 
-                // Non-interactive progress placeholder
+                // Live position bar (read-only — drag-to-seek is deferred)
                 RowLayout {
                     spacing: 6
 
                     Controls.Label {
-                        text: "0:00"
+                        id: posLabel
+                        text: root.fmtTime(player.position_secs)
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.75
                         color: Kirigami.Theme.disabledTextColor || "#888888"
                     }
 
                     Item {
                         Layout.fillWidth: true
-                        height: 4
+                        height: seekBar.implicitHeight
 
-                        Rectangle {
+                        Controls.ProgressBar {
+                            id: seekBar
                             anchors.fill: parent
-                            radius: 2
-                            color: Kirigami.Theme.alternateBackgroundColor || "#f5f5f5"
+                            from: 0
+                            to: 1
+                            value: (player.duration_secs > 0)
+                                   ? (player.position_secs / player.duration_secs)
+                                   : 0
                         }
 
                         HoverHandler {
@@ -293,12 +329,16 @@ Kirigami.ApplicationWindow {
 
                         Controls.ToolTip {
                             visible: progressHover.hovered
-                            text: "Seek — coming soon"
+                            text: "Drag-to-seek coming soon"
+                            delay: 400
                         }
                     }
 
                     Controls.Label {
-                        text: "—"
+                        id: durLabel
+                        text: (player.duration_secs > 0)
+                              ? root.fmtTime(player.duration_secs)
+                              : "—"
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.75
                         color: Kirigami.Theme.disabledTextColor || "#888888"
                     }
