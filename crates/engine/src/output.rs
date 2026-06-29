@@ -3,13 +3,16 @@
 //! Real-time discipline: the audio callback ONLY pops f32 samples from the
 //! `rtrb::Consumer`.  It must not allocate, lock, block, or log.  On
 //! underrun it writes silence (0.0).
+//!
+//! The callback also pushes a downsampled/mono copy into a second lock-free
+//! viz ring (for the spectrum analyzer).  The push is skip-if-full — RT safe.
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{Device, HostId, Stream, StreamConfig};
-use rtrb::Consumer;
+use rtrb::{Consumer, Producer};
 
 use crate::Error;
 
@@ -69,6 +72,10 @@ impl OutputDevice {
 /// When `flushing` is `true`, the callback pops and discards all available
 /// samples from the ring buffer (draining stale pre-seek audio) and outputs
 /// silence.  It does NOT advance `frames_played` during a flush.
+///
+/// `viz_producer` — if provided, the callback taps the played (post-gain)
+/// audio into this SPSC ring as mono (averaged across channels) samples.
+/// The push is skip-if-full (non-blocking) so the RT discipline is preserved.
 pub(crate) fn build_output_stream(
     out: &OutputDevice,
     mut consumer: Consumer<f32>,
@@ -76,8 +83,10 @@ pub(crate) fn build_output_stream(
     flushing: Arc<AtomicBool>,
     channels: u16,
     volume: Arc<AtomicU32>,
+    mut viz_producer: Option<Producer<f32>>,
 ) -> crate::Result<Stream> {
     let ch = channels as u64;
+    let ch_usize = channels as usize;
 
     let stream = out
         .device
@@ -115,6 +124,26 @@ pub(crate) fn build_output_stream(
                 // Accumulate frames (interleaved samples / channel count).
                 if ch > 0 && real_samples > 0 {
                     frames_played.fetch_add(real_samples / ch, Ordering::Relaxed);
+                }
+
+                // ── Viz tap (RT-safe: lock-free push, skip-if-full) ───────────
+                // Downsample to mono: push one averaged sample per output frame.
+                // If the viz ring is full, silently skip — the analyzer is
+                // non-critical and only needs recent samples.
+                if let Some(ref mut vp) = viz_producer {
+                    let frames = if ch_usize > 0 { buf.len() / ch_usize } else { 0 };
+                    for frame_idx in 0..frames {
+                        let offset = frame_idx * ch_usize;
+                        let mut mono = 0.0f32;
+                        for c in 0..ch_usize {
+                            mono += buf[offset + c];
+                        }
+                        if ch_usize > 0 {
+                            mono /= ch_usize as f32;
+                        }
+                        // push() returns Err if full — we just discard (skip-if-full).
+                        let _ = vp.push(mono);
+                    }
                 }
             },
             // ---- error callback (called from a non-RT context) ----

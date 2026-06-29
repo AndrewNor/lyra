@@ -9,4 +9,5 @@ lyra-dsp = { path = "../dsp" }
 lyra-core = { path = "../core" }
 cpal = { workspace = true }
 rtrb = { workspace = true }
+rustfft = { workspace = true }
 thiserror = { workspace = true }

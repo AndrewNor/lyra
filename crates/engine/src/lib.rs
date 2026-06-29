@@ -8,6 +8,7 @@
 
 mod decode_loop;
 mod output;
+pub mod spectrum;
 
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -19,6 +20,7 @@ use thiserror::Error;
 
 use decode_loop::DecodeThread;
 use output::{OutputDevice, RING_BUFFER_SAMPLES, build_output_stream};
+use spectrum::{NUM_BANDS, SpectrumAnalyzerHandle, SpectrumLevels, start_analyzer};
 
 // ── EQ configuration ─────────────────────────────────────────────────────────
 
@@ -137,6 +139,14 @@ pub struct Engine {
     /// Bit-perfect mode flag.  When `true` the decode thread skips EQ
     /// (and skips resampling when rates match).
     bit_perfect: Arc<AtomicBool>,
+
+    /// Handle to the spectrum analyzer thread.  `None` when stopped.
+    /// Replaced on each `play()`.
+    spectrum_analyzer: Option<SpectrumAnalyzerHandle>,
+
+    /// Shared 24-band levels (f32 bits in AtomicU32).  Created once in
+    /// `Engine::new()` and reused across successive analyzer instances.
+    spectrum_levels_store: SpectrumLevels,
 }
 
 impl Engine {
@@ -145,6 +155,19 @@ impl Engine {
     /// available.
     pub fn new() -> Result<Self> {
         let out = OutputDevice::open()?;
+
+        // Allocate the persistent spectrum levels store (zeroed).
+        let spectrum_levels_store = {
+            let arr: [AtomicU32; NUM_BANDS] = [
+                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+                AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0),
+            ];
+            Arc::new(arr)
+        };
 
         Ok(Self {
             out,
@@ -161,6 +184,8 @@ impl Engine {
             eq_config: Arc::new(Mutex::new(EqConfig::default())),
             eq_generation: Arc::new(AtomicU64::new(0)),
             bit_perfect: Arc::new(AtomicBool::new(false)),
+            spectrum_analyzer: None,
+            spectrum_levels_store,
         })
     }
 
@@ -171,7 +196,7 @@ impl Engine {
 
     /// Start playing the audio file at `path`, replacing any current playback.
     pub fn play(&mut self, path: &Path) -> Result<()> {
-        // Stop any existing playback cleanly.
+        // Stop any existing playback cleanly (drops the old SpectrumAnalyzer too).
         self.stop_internal();
 
         // Reset the position counter for the new track.
@@ -188,6 +213,15 @@ impl Engine {
         // Allocate the ring buffer.
         let (producer, consumer) = RingBuffer::<f32>::new(RING_BUFFER_SAMPLES);
 
+        // Spawn a fresh spectrum analyzer.  It writes into the shared levels store.
+        // start_analyzer returns the SPSC producer (moved into the RT callback)
+        // and a handle (stored in self for lifetime management).
+        let (viz_producer, analyzer_handle) = start_analyzer(
+            Arc::clone(&self.spectrum_levels_store),
+            self.out.sample_rate,
+            self.out.channels,
+        );
+
         // Build and start the cpal output stream (consumer end).
         let stream = build_output_stream(
             &self.out,
@@ -196,7 +230,10 @@ impl Engine {
             Arc::clone(&self.flushing),
             self.out.channels,
             Arc::clone(&self.volume),
+            Some(viz_producer),
         )?;
+
+        self.spectrum_analyzer = Some(analyzer_handle);
 
         // Spawn the decode thread (producer end).
         let decode_thread = DecodeThread::spawn(
@@ -371,12 +408,32 @@ impl Engine {
         }
         self.stream = None;
 
+        // Drop the spectrum analyzer — this signals its thread to exit and joins.
+        // Dropping after the stream is paused ensures the RT callback no longer
+        // holds the viz producer (it was moved into the closure and dies with it).
+        self.spectrum_analyzer = None;
+
+        // Zero out all band levels so the visualizer rests at 0.
+        for atom in self.spectrum_levels_store.iter() {
+            atom.store(0, Ordering::Relaxed);
+        }
+
         self.stop_flag = Arc::new(AtomicBool::new(false));
         self.paused_flag = Arc::new(AtomicBool::new(false));
         self.seek_ms = Arc::new(AtomicU64::new(SEEK_NONE));
         self.seek_generation = Arc::new(AtomicU64::new(0));
         self.flushing = Arc::new(AtomicBool::new(false));
         self.state = PlaybackState::Stopped;
+    }
+
+    /// Return a snapshot of the 24 spectrum band levels (0.0..=1.0).
+    /// Read from the shared AtomicU32 store; safe to call from any thread.
+    pub fn spectrum_levels(&self) -> [f32; NUM_BANDS] {
+        let mut out = [0.0f32; NUM_BANDS];
+        for (i, atom) in self.spectrum_levels_store.iter().enumerate() {
+            out[i] = f32::from_bits(atom.load(Ordering::Relaxed));
+        }
+        out
     }
 }
 
