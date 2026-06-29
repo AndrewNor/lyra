@@ -28,6 +28,12 @@ pub mod qobject {
         #[qproperty(f64, duration_secs)]
         type Player = super::PlayerRust;
 
+        /// Initialise the MPRIS2 D-Bus server.  Call once from QML
+        /// `Component.onCompleted`.
+        #[qinvokable]
+        #[cxx_name = "initMpris"]
+        fn init_mpris(self: Pin<&mut Player>);
+
         /// Start playback of `path`.  Lazily opens the audio device on first call.
         #[qinvokable]
         fn play(self: Pin<&mut Player>, path: QString, title: QString, artist: QString);
@@ -73,13 +79,18 @@ pub mod qobject {
         #[cxx_name = "seek"]
         fn seek(self: Pin<&mut Player>, fraction: f64);
     }
+
+    impl cxx_qt::Threading for Player {}
 }
 
 use core::pin::Pin;
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use lyra_core::PlayQueue;
 use lyra_engine::Engine;
+use mpris_server::PlaybackStatus;
+
+use crate::mpris::{MprisHandle, MprisState};
 
 // ── Row type for the cached playlist ────────────────────────────────────────
 
@@ -116,6 +127,9 @@ pub struct PlayerRust {
 
     /// Cached playlist parsed from the last `play_from_list` call.
     playlist: Vec<TrackRow>,
+
+    /// MPRIS2 server handle — initialised once from QML via `initMpris`.
+    mpris_handle: Option<MprisHandle>,
 }
 
 impl Default for PlayerRust {
@@ -131,6 +145,7 @@ impl Default for PlayerRust {
             engine: None,
             play_queue: PlayQueue::new(),
             playlist: Vec::new(),
+            mpris_handle: None,
         }
     }
 }
@@ -196,6 +211,43 @@ fn build_queue_json(playlist: &[TrackRow], current_id: Option<i64>) -> String {
 // ── QObject impl ─────────────────────────────────────────────────────────────
 
 impl qobject::Player {
+    // ── MPRIS helpers ─────────────────────────────────────────────────────────
+
+    /// Initialise the MPRIS2 D-Bus server once from QML `Component.onCompleted`.
+    fn init_mpris(mut self: Pin<&mut Self>) {
+        let qt = self.as_mut().qt_thread();
+        let handle = crate::mpris::start(qt);
+        unsafe { self.as_mut().rust_mut().get_unchecked_mut() }.mpris_handle = handle;
+    }
+
+    /// Collect the current playback state and push it to the MPRIS thread.
+    /// Silently does nothing if MPRIS was not initialised.
+    fn push_mpris_state(self: Pin<&Self>) {
+        let r = self.rust();
+        let Some(ref handle) = r.mpris_handle else {
+            return;
+        };
+        let status = {
+            let st = r.state_text.to_string();
+            match st.as_str() {
+                "Playing" => PlaybackStatus::Playing,
+                "Paused" => PlaybackStatus::Paused,
+                _ => PlaybackStatus::Stopped,
+            }
+        };
+        let state = MprisState {
+            status,
+            title: r.current_title.to_string(),
+            artist: r.current_artist.to_string(),
+            cover_path: r.current_cover_thumb.to_string(),
+            duration_us: (r.duration_secs * 1_000_000.0) as i64,
+            position_us: (r.position_secs * 1_000_000.0) as i64,
+        };
+        handle.update(state);
+    }
+
+    // ── Engine management ─────────────────────────────────────────────────────
+
     /// Ensure the engine exists, returning false and setting state_text on error.
     fn ensure_engine(mut self: Pin<&mut Self>) -> bool {
         let needs_init = {
@@ -246,6 +298,8 @@ impl qobject::Player {
                 // Reset position and set duration for the new track.
                 self.as_mut().set_position_secs(0.0);
                 self.as_mut().set_duration_secs(duration_ms as f64 / 1000.0);
+                // Notify MPRIS of the new track and Playing status.
+                self.as_ref().push_mpris_state();
             }
             Some(Err(e)) => {
                 let msg = format!("Play error: {e}");
@@ -308,7 +362,7 @@ impl qobject::Player {
         self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
     }
 
-    fn next(mut self: Pin<&mut Self>) {
+    pub fn next(mut self: Pin<&mut Self>) {
         // Advance the queue and get the new id.
         let next_id = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
@@ -344,7 +398,7 @@ impl qobject::Player {
         self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
     }
 
-    fn prev(mut self: Pin<&mut Self>) {
+    pub fn prev(mut self: Pin<&mut Self>) {
         // Step back the queue and get the new id.
         let prev_id = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
@@ -380,7 +434,7 @@ impl qobject::Player {
         self.as_mut().play_row(&path, &title, &artist, &cover, dur_ms);
     }
 
-    fn pause(mut self: Pin<&mut Self>) {
+    pub fn pause(mut self: Pin<&mut Self>) {
         let did_pause = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             if let Some(e) = r.engine.as_mut() {
@@ -392,10 +446,11 @@ impl qobject::Player {
         };
         if did_pause {
             self.as_mut().set_state_text(QString::from("Paused"));
+            self.as_ref().push_mpris_state();
         }
     }
 
-    fn resume(mut self: Pin<&mut Self>) {
+    pub fn resume(mut self: Pin<&mut Self>) {
         let did_resume = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             if let Some(e) = r.engine.as_mut() {
@@ -407,10 +462,11 @@ impl qobject::Player {
         };
         if did_resume {
             self.as_mut().set_state_text(QString::from("Playing"));
+            self.as_ref().push_mpris_state();
         }
     }
 
-    fn stop(mut self: Pin<&mut Self>) {
+    pub fn stop(mut self: Pin<&mut Self>) {
         {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             if let Some(e) = r.engine.as_mut() {
@@ -423,6 +479,8 @@ impl qobject::Player {
         self.as_mut().set_current_cover_thumb(QString::from(""));
         self.as_mut().set_position_secs(0.0);
         self.as_mut().set_duration_secs(0.0);
+        // Notify MPRIS of Stopped status + cleared metadata.
+        self.as_ref().push_mpris_state();
     }
 
     fn refresh_position(mut self: Pin<&mut Self>) {

@@ -3,5 +3,6 @@
 
 pub mod bridge;
 pub mod library;
+pub mod mpris;
 pub mod paths;
 pub mod player;

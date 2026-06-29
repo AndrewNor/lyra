@@ -16,6 +16,9 @@ serde_json   = { workspace = true }
 cxx          = { workspace = true }
 cxx-qt       = { workspace = true }
 cxx-qt-lib   = { workspace = true }
+mpris-server  = { workspace = true }
+async-channel = { workspace = true }
+async-io      = { workspace = true }
 
 [build-dependencies]
 cxx-qt-build = { workspace = true }

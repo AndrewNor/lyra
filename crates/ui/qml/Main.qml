@@ -17,7 +17,10 @@ Kirigami.ApplicationWindow {
     Library { id: library }
     Player  { id: player  }
 
-    Component.onCompleted: library.loadAll()
+    Component.onCompleted: {
+        library.loadAll()
+        player.initMpris()
+    }
 
     // ── View state machine ───────────────────────────────────────────────────
     // Possible values: "songs" | "albums" | "album_detail"
