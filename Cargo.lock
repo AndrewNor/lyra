@@ -1449,6 +1449,10 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "lyra-core",
+ "lyra-db",
+ "lyra-engine",
+ "lyra-library",
+ "serde_json",
 ]
 
 [[package]]

@@ -8,6 +8,8 @@ fn main() {
             .qml_files(["qml/Main.qml"]),
     )
     .file("src/bridge.rs")
+    .file("src/library.rs")
+    .file("src/player.rs")
     .qt_module("Gui")
     .qt_module("Quick")
     .build();
