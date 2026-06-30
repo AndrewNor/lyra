@@ -59,6 +59,41 @@ Kirigami.ApplicationWindow {
         player.restoreSession()
     }
 
+    // ── Auto-scroll the song list to the now-playing track ──────────────────
+    // On every track change, smoothly scroll so the playing track sits as the
+    // 3rd visible row (two tracks of context above it).
+    NumberAnimation {
+        id: trackScrollAnim
+        target: trackList
+        property: "contentY"
+        duration: 480
+        easing.type: Easing.InOutCubic
+    }
+    function scrollCurrentIntoView() {
+        var t = player.current_title || ""
+        if (t.length === 0) return
+        var a = player.current_artist || ""
+        var arr = root.tracks
+        if (!arr || arr.length === 0) return
+        var idx = -1
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i] && arr[i].title === t && (arr[i].artist || "") === a) { idx = i; break }
+        }
+        if (idx < 0) return
+        var rowH = 64                       // TrackDelegate height
+        var target = Math.max(0, (idx - 2) * rowH)   // current track → 3rd row
+        var maxY = Math.max(0, trackList.contentHeight - trackList.height)
+        if (target > maxY) target = maxY
+        trackScrollAnim.stop()
+        trackScrollAnim.from = trackList.contentY
+        trackScrollAnim.to = target
+        trackScrollAnim.start()
+    }
+    Connections {
+        target: player
+        function onCurrent_titleChanged() { Qt.callLater(root.scrollCurrentIntoView) }
+    }
+
     // ── View state machine ──────────────────────────────────────────────────
     property string view: "songs"
     property string detailName: ""
@@ -697,7 +732,7 @@ Kirigami.ApplicationWindow {
 
             Controls.ToolButton {
                 icon.name: root.nowPlayingVisible ? "sidebar-collapse-right" : "sidebar-expand-right"
-                icon.color: root.nowPlayingVisible ? root.accentColor : "#5e5e66"
+                icon.color: "#5e5e66"
                 onClicked: root.nowPlayingVisible = !root.nowPlayingVisible
                 Controls.ToolTip.visible: hovered
                 Controls.ToolTip.text: root.nowPlayingVisible ? "Hide Now Playing panel" : "Show Now Playing panel"
@@ -1615,7 +1650,9 @@ Kirigami.ApplicationWindow {
 
                                     Rectangle {
                                         anchors.fill: parent
-                                        color: Qt.rgba(0, 0, 0, 0.03)
+                                        // Transparent so the column-label bar doesn't show square
+                                        // corners poking past the rounded content card.
+                                        color: "transparent"
                                     }
 
                                     RowLayout {
@@ -2405,6 +2442,7 @@ Kirigami.ApplicationWindow {
 
                     Rectangle {
                         anchors.fill: parent
+                        radius: 18   // match the card so corners don't poke past the rounding
                         gradient: Gradient {
                             GradientStop { position: 0.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.24) }
                             GradientStop { position: 0.5; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.08) }
