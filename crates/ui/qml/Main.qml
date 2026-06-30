@@ -687,6 +687,7 @@ Kirigami.ApplicationWindow {
             Controls.ToolButton {
                 text: (library.scanning || false) ? "Scanning…" : "Scan"
                 icon.name: "view-refresh"
+                icon.color: "#5e5e66"
                 enabled: !(library.scanning || false)
                 onClicked: library.scan()
                 Controls.ToolTip.visible: hovered
@@ -696,6 +697,7 @@ Kirigami.ApplicationWindow {
 
             Controls.ToolButton {
                 icon.name: root.nowPlayingVisible ? "sidebar-collapse-right" : "sidebar-expand-right"
+                icon.color: root.nowPlayingVisible ? root.accentColor : "#5e5e66"
                 onClicked: root.nowPlayingVisible = !root.nowPlayingVisible
                 Controls.ToolTip.visible: hovered
                 Controls.ToolTip.text: root.nowPlayingVisible ? "Hide Now Playing panel" : "Show Now Playing panel"
@@ -706,7 +708,7 @@ Kirigami.ApplicationWindow {
                 icon.name: "configure"
                 checkable: false
                 highlighted: root.view === "settings"
-                icon.color: root.view === "settings" ? root.accentColor : Kirigami.Theme.textColor
+                icon.color: root.view === "settings" ? root.accentColor : "#5e5e66"
                 onClicked: root.view = root.view === "settings" ? "songs" : "settings"
                 Controls.ToolTip.visible: hovered
                 Controls.ToolTip.text: "Settings"
@@ -1527,6 +1529,7 @@ Kirigami.ApplicationWindow {
                                 Controls.ToolButton {
                                     visible: root.view === "playlist_detail"
                                     icon.name: "edit-rename"
+                                    icon.color: "#5e5e66"
                                     Controls.ToolTip.visible: hovered
                                     Controls.ToolTip.text: "Rename playlist"
                                     Controls.ToolTip.delay: 400
@@ -1540,6 +1543,7 @@ Kirigami.ApplicationWindow {
                                 Controls.ToolButton {
                                     visible: root.view === "playlist_detail"
                                     icon.name: "edit-delete"
+                                    icon.color: "#5e5e66"
                                     Controls.ToolTip.visible: hovered
                                     Controls.ToolTip.text: "Delete playlist"
                                     Controls.ToolTip.delay: 400
@@ -1554,6 +1558,7 @@ Kirigami.ApplicationWindow {
                                 Controls.ToolButton {
                                     visible: root.view === "smart_detail"
                                     icon.name: "edit-delete"
+                                    icon.color: "#5e5e66"
                                     Controls.ToolTip.visible: hovered
                                     Controls.ToolTip.text: "Delete smart playlist"
                                     Controls.ToolTip.delay: 400

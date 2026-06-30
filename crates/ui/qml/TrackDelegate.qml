@@ -298,6 +298,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         visible: delegateHover.containsMouse
         icon.name: "list-add"
+        icon.color: "#5e5e66"
         implicitWidth: 28
         implicitHeight: 28
         flat: true
