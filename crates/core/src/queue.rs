@@ -98,6 +98,21 @@ impl PlayQueue {
         self.items.get(idx).copied()
     }
 
+    /// Ids of the tracks that will play after the current one, in actual play
+    /// order (shuffle-aware), up to `max`.  Does not wrap.  Used to render the
+    /// "Up Next" list so it matches what will really play.
+    pub fn upcoming(&self, max: usize) -> Vec<i64> {
+        let Some(pos) = self.pos else {
+            return Vec::new();
+        };
+        self.order
+            .iter()
+            .skip(pos + 1)
+            .take(max)
+            .filter_map(|&i| self.items.get(i).copied())
+            .collect()
+    }
+
     /// Advance to the next track and return its id, or `None` when the
     /// queue is exhausted (respects `repeat`).
     pub fn next(&mut self) -> Option<i64> {
@@ -235,6 +250,47 @@ mod tests {
     fn empty_current_is_none() {
         let q = PlayQueue::new();
         assert_eq!(q.current(), None);
+    }
+
+    #[test]
+    fn upcoming_follows_play_order() {
+        let mut q = PlayQueue::new();
+        q.set_items(vec![10i64, 20, 30, 40, 50]);
+        q.jump_to(0);
+        // Linear: upcoming is the next items in insertion order.
+        assert_eq!(q.upcoming(2), vec![20, 30]);
+        // Shuffled: upcoming follows the shuffle permutation, and must match
+        // what next() actually returns.
+        q.set_shuffle(true);
+        let up = q.upcoming(3);
+        let mut walk = Vec::new();
+        for _ in 0..3 {
+            if let Some(id) = q.next() {
+                walk.push(id);
+            }
+        }
+        assert_eq!(up, walk, "upcoming() must match the order next() plays");
+    }
+
+    #[test]
+    fn shuffle_off_then_next_is_sequential() {
+        let items = vec![10i64, 20, 30, 40, 50];
+        let mut q = PlayQueue::new();
+        q.set_items(items.clone());
+        q.set_shuffle(true);
+        q.jump_to(0);
+        q.next();
+        q.next();
+        let cur = q.current().unwrap();
+
+        // Turn shuffle OFF — current track must be preserved...
+        q.set_shuffle(false);
+        assert_eq!(q.current(), Some(cur), "current track changed on shuffle-off");
+
+        // ...and next() must now be the item AFTER `cur` in insertion order.
+        let cur_idx = items.iter().position(|&x| x == cur).unwrap();
+        let expected = items.get(cur_idx + 1).copied();
+        assert_eq!(q.next(), expected, "next after shuffle-off is not sequential");
     }
 
     #[test]

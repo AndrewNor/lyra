@@ -471,18 +471,12 @@ fn find_row<'a>(playlist: &'a [TrackRow], id: i64) -> Option<&'a TrackRow> {
 
 /// Build the queue_json: the rows AFTER the current position in the playlist.
 /// Uses the play-queue's current id to determine the current position.
-fn build_queue_json(playlist: &[TrackRow], current_id: Option<i64>) -> String {
-    let start = match current_id {
-        None => return "[]".to_owned(),
-        Some(id) => {
-            match playlist.iter().position(|r| r.id == id) {
-                None => return "[]".to_owned(),
-                Some(pos) => pos + 1,
-            }
-        }
-    };
-    let upcoming: Vec<serde_json::Value> = playlist[start..]
+/// Build the Up-Next JSON from the queue's actual upcoming ids (shuffle-aware),
+/// resolving each id to its display row in the cached playlist.
+fn build_queue_json(playlist: &[TrackRow], upcoming_ids: &[i64]) -> String {
+    let upcoming: Vec<serde_json::Value> = upcoming_ids
         .iter()
+        .filter_map(|id| find_row(playlist, *id))
         .map(|r| {
             serde_json::json!({
                 "id": r.id,
@@ -666,16 +660,16 @@ impl qobject::Player {
 
         // Load the queue with all ids and jump to the requested index.
         let ids: Vec<i64> = playlist.iter().map(|r| r.id).collect();
-        {
+        let upcoming_ids = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             r.playlist = playlist.clone();
             r.play_queue.set_items(ids);
             r.play_queue.jump_to(idx);
-        }
+            r.play_queue.upcoming(500)
+        };
 
         let row = playlist[idx].clone();
-        let current_id = Some(row.id);
-        let queue_json = build_queue_json(&playlist, current_id);
+        let queue_json = build_queue_json(&playlist, &upcoming_ids);
         self.as_mut()
             .set_queue_json(QString::from(queue_json.as_str()));
 
@@ -729,7 +723,8 @@ impl qobject::Player {
             let next_p = pos
                 .and_then(|i| playlist.get(i + 1))
                 .map(|r| r.path.clone());
-            let qj = build_queue_json(playlist, Some(id));
+            let upcoming = r.play_queue.upcoming(500);
+            let qj = build_queue_json(playlist, &upcoming);
             (
                 row.path.clone(),
                 row.title.clone(),
@@ -779,7 +774,8 @@ impl qobject::Player {
             let next_p = pos
                 .and_then(|i| playlist.get(i + 1))
                 .map(|r| r.path.clone());
-            let qj = build_queue_json(playlist, Some(id));
+            let upcoming = r.play_queue.upcoming(500);
+            let qj = build_queue_json(playlist, &upcoming);
             (
                 row.path.clone(),
                 row.title.clone(),
@@ -1178,8 +1174,13 @@ impl qobject::Player {
                 self.as_mut().set_position_secs(session.position_secs);
                 self.as_mut().set_state_text(QString::from("Stopped"));
 
-                // Build queue_json (tracks after current).
-                let queue_json = build_queue_json(&playlist, current_id);
+                // Build queue_json from the queue's actual order (shuffle-aware).
+                let _ = current_id;
+                let upcoming_ids = {
+                    let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
+                    r.play_queue.upcoming(500)
+                };
+                let queue_json = build_queue_json(&playlist, &upcoming_ids);
                 self.as_mut().set_queue_json(QString::from(queue_json.as_str()));
 
                 eprintln!("[lyra] restore_session: loaded \"{}\" at {:.1}s", row.title, session.position_secs);
@@ -1221,16 +1222,16 @@ impl qobject::Player {
         }).collect();
 
         let ids: Vec<i64> = playlist.iter().map(|r| r.id).collect();
-        {
+        let upcoming_ids = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
             r.playlist = playlist.clone();
             r.play_queue.set_items(ids);
             r.play_queue.jump_to(0);
-        }
+            r.play_queue.upcoming(500)
+        };
 
         let row = &playlist[0];
-        let current_id = Some(row.id);
-        let queue_json = build_queue_json(&playlist, current_id);
+        let queue_json = build_queue_json(&playlist, &upcoming_ids);
 
         self.as_mut().set_current_title(QString::from(row.title.as_str()));
         self.as_mut().set_current_artist(QString::from(row.artist.as_str()));
