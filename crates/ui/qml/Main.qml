@@ -15,23 +15,26 @@ Kirigami.ApplicationWindow {
     minimumHeight: 480
 
     // ── Design tokens — light & airy; accent pulled from the current cover ──────
-    // Soft neutral canvas so the white now-playing panel + artwork read as the
-    // bright focal points, instead of one big flat white field.
-    readonly property color bgBase:      "#f2f2f5"
-    readonly property color bgSidebar:   "#e9e9ee"
-    readonly property color bgContent:   "#f2f2f5"
+    // Accent + ambient tint sampled from the current album art (Rust side).
+    readonly property color accentColor: player.current_accent
+    readonly property color accentSoft:  Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.12)
+    readonly property color hoverColor:  Qt.rgba(0, 0, 0, 0.045)
+
+    // The whole app is bathed in the current cover's colour — every surface is a
+    // light neutral tinted with the accent, strongest on the sidebar. The
+    // now-playing panel + artwork stay white as the bright focal points. Tint
+    // shifts with each song.
+    readonly property color bgBase:      Qt.tint("#f1f1f4", Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.11))
+    readonly property color bgContent:   bgBase
+    readonly property color bgHeader:    bgBase
+    readonly property color bgSidebar:   Qt.tint("#e6e6eb", Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.18))
     readonly property color bgPanel:     "#ffffff"
-    readonly property color bgHeader:    "#f2f2f5"
-    // No divider lines — separation is by spacing. Kept transparent so any
-    // remaining separator rectangles that reference it simply vanish.
+    // No divider lines — separation is by spacing. Transparent so any remaining
+    // separator rectangles that reference it simply vanish.
     readonly property color sepColor:    "transparent"
     readonly property color textPrimary: "#1d1d1f"
     readonly property color textDim:     "#86868b"
     readonly property color textFaint:   "#b0b0b6"
-    // Accent + ambient tint are sampled from the current album art (Rust side).
-    readonly property color accentColor: player.current_accent
-    readonly property color accentSoft:  Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.12)
-    readonly property color hoverColor:  Qt.rgba(0, 0, 0, 0.045)
 
     // Force a light colour scheme so Kirigami-styled controls (switches, combos,
     // scrollbars, menus) match, and route the dynamic accent through the
@@ -865,8 +868,8 @@ Kirigami.ApplicationWindow {
 
                 // ── Play/Pause — accent glow button ───────────────────────────
                 Item {
-                    width: 52
-                    height: 52
+                    width: 60
+                    height: 60
 
                     // Outer glow halo
                     Rectangle {
@@ -905,8 +908,8 @@ Kirigami.ApplicationWindow {
                             source: (player.state_text === "Playing")
                                     ? "media-playback-pause"
                                     : "media-playback-start"
-                            width: 22
-                            height: 22
+                            width: 26
+                            height: 26
                             color: "white"
                         }
                     }
@@ -2372,9 +2375,9 @@ Kirigami.ApplicationWindow {
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16) }
-                            GradientStop { position: 0.5; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.05) }
-                            GradientStop { position: 1.0; color: "#ffffff" }
+                            GradientStop { position: 0.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.42) }
+                            GradientStop { position: 0.55; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.14) }
+                            GradientStop { position: 1.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04) }
                         }
                     }
                 }
