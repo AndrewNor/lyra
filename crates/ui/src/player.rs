@@ -249,7 +249,7 @@ fn build_eq_bands_json(gains: &[f32; 10]) -> String {
 /// Fallback accent for covers with no real colour (greyscale / very dark art)
 /// or when extraction fails — a warm coral that reads well on the light theme,
 /// rather than a cold blue.
-const DEFAULT_ACCENT: &str = "#e0705a";
+const DEFAULT_ACCENT: &str = "#6f8bad";
 
 /// Sample a vibrant, light-theme-friendly accent colour from a cover thumbnail.
 ///
