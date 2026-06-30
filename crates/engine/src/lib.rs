@@ -240,6 +240,7 @@ impl Engine {
             consumer,
             Arc::clone(&self.frames_played),
             Arc::clone(&self.flushing),
+            Arc::clone(&paused_flag),
             self.out.channels,
             Arc::clone(&self.volume),
             Some(viz_producer),

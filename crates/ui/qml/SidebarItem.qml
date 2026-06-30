@@ -15,7 +15,11 @@ Item {
 
     signal activated()
 
-    width: parent ? parent.width : 200
+    // Used inside ColumnLayouts: a layout ignores an explicit `width`, so fill
+    // via the layout instead (otherwise the row collapses to width 0 — full
+    // height but no hit area, and clicks silently miss).
+    Layout.fillWidth: true
+    implicitWidth: 200
     height: 40
 
     // ── Active pill — accent gradient fill ─────────────────────────────────

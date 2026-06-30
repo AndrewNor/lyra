@@ -81,6 +81,7 @@ pub(crate) fn build_output_stream(
     mut consumer: Consumer<f32>,
     frames_played: Arc<AtomicU64>,
     flushing: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     channels: u16,
     volume: Arc<AtomicU32>,
     mut viz_producer: Option<Producer<f32>>,
@@ -94,6 +95,18 @@ pub(crate) fn build_output_stream(
             out.config.clone(),
             // ---- RT callback: no alloc / lock / IO / log ----
             move |buf: &mut [f32], _info: &cpal::OutputCallbackInfo| {
+                // When paused: output silence immediately and return WITHOUT
+                // draining the ring buffer.  This makes pause take effect now
+                // (instead of after the ~3 s ring buffer finishes playing), and
+                // because the ring is left intact, resume continues seamlessly.
+                // The position counter is not advanced while paused.
+                if paused.load(Ordering::Acquire) {
+                    for sample in buf.iter_mut() {
+                        *sample = 0.0;
+                    }
+                    return;
+                }
+
                 // When flushing (seek in progress): drain the ring buffer to
                 // clear stale audio, then output silence.  Do not advance the
                 // position counter during a flush.
