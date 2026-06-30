@@ -1694,7 +1694,7 @@ Kirigami.ApplicationWindow {
                                     }
                                 }
 
-                                headerPositioning: ListView.OverlayHeader
+                                headerPositioning: ListView.InlineHeader
 
                                 delegate: TrackDelegate {
                                     width: trackList.width
@@ -1820,7 +1820,7 @@ Kirigami.ApplicationWindow {
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: Qt.rgba(0, 0, 0, 0.03)
+                                color: "transparent"
                             }
 
                             RowLayout {
@@ -1857,7 +1857,7 @@ Kirigami.ApplicationWindow {
                             }
                         }
 
-                        headerPositioning: ListView.OverlayHeader
+                        headerPositioning: ListView.InlineHeader
 
                         delegate: ArtistRow {
                             width: artistList.width
@@ -2343,7 +2343,7 @@ Kirigami.ApplicationWindow {
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: Qt.rgba(0, 0, 0, 0.03)
+                                color: "transparent"
                             }
 
                             RowLayout {
@@ -2380,7 +2380,7 @@ Kirigami.ApplicationWindow {
                             }
                         }
 
-                        headerPositioning: ListView.OverlayHeader
+                        headerPositioning: ListView.InlineHeader
 
                         delegate: GenreRow {
                             width: genreList.width
