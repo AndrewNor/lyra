@@ -723,6 +723,7 @@ Kirigami.ApplicationWindow {
                 text: (library.scanning || false) ? "Scanning…" : "Scan"
                 icon.name: "view-refresh"
                 icon.color: "#5e5e66"
+                palette.buttonText: "#5e5e66"
                 enabled: !(library.scanning || false)
                 onClicked: library.scan()
                 Controls.ToolTip.visible: hovered
