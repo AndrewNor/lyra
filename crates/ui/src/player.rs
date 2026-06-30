@@ -246,9 +246,10 @@ fn build_eq_bands_json(gains: &[f32; 10]) -> String {
 
 // ── Album-art accent colour extraction ───────────────────────────────────────
 
-/// Fallback accent when there is no cover (or extraction fails) — a calm indigo
-/// that reads well on the light theme.
-const DEFAULT_ACCENT: &str = "#5b62d6";
+/// Fallback accent for covers with no real colour (greyscale / very dark art)
+/// or when extraction fails — a warm coral that reads well on the light theme,
+/// rather than a cold blue.
+const DEFAULT_ACCENT: &str = "#e0705a";
 
 /// Sample a vibrant, light-theme-friendly accent colour from a cover thumbnail.
 ///
