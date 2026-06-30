@@ -587,6 +587,15 @@ Kirigami.ApplicationWindow {
         id: topBar
         height: 54
 
+        // ToolBars otherwise adopt a system colorSet (dark on a dark Plasma
+        // theme), turning default icons/text white — invisible on the light bar.
+        // Force the light scheme so default-coloured icons render dark.
+        Kirigami.Theme.inherit: false
+        Kirigami.Theme.colorSet: Kirigami.Theme.View
+        Kirigami.Theme.backgroundColor: root.bgHeader
+        Kirigami.Theme.textColor: root.textPrimary
+        Kirigami.Theme.highlightColor: player.current_accent
+
         background: Rectangle {
             color: root.bgHeader
 
@@ -706,6 +715,13 @@ Kirigami.ApplicationWindow {
     footer: Controls.ToolBar {
         id: transportBar
         height: 82
+
+        // Force light scheme (see header) so transport icons render dark, not white.
+        Kirigami.Theme.inherit: false
+        Kirigami.Theme.colorSet: Kirigami.Theme.View
+        Kirigami.Theme.backgroundColor: root.bgHeader
+        Kirigami.Theme.textColor: root.textPrimary
+        Kirigami.Theme.highlightColor: player.current_accent
 
         background: Rectangle {
             color: root.bgHeader
@@ -829,8 +845,8 @@ Kirigami.ApplicationWindow {
 
                 Controls.ToolButton {
                     icon.name: "media-playlist-shuffle"
-                    opacity: player.shuffle ? 1.0 : 0.50
-                    icon.color: player.shuffle ? Kirigami.Theme.highlightColor : Kirigami.Theme.textColor
+                    opacity: player.shuffle ? 1.0 : 0.9
+                    icon.color: player.shuffle ? root.accentColor : "#5e5e66"
                     onClicked: player.toggleShuffle()
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.text: player.shuffle ? "Shuffle: On" : "Shuffle: Off"
@@ -839,6 +855,7 @@ Kirigami.ApplicationWindow {
 
                 Controls.ToolButton {
                     icon.name: "media-skip-backward"
+                    icon.color: "#5e5e66"
                     onClicked: player.prev()
                     enabled: (player.state_text || "Stopped") !== "Stopped"
                     Controls.ToolTip.visible: hovered
@@ -921,6 +938,7 @@ Kirigami.ApplicationWindow {
 
                 Controls.ToolButton {
                     icon.name: "media-skip-forward"
+                    icon.color: "#5e5e66"
                     onClicked: player.next()
                     enabled: (player.state_text || "Stopped") !== "Stopped"
                     Controls.ToolTip.visible: hovered
@@ -932,10 +950,10 @@ Kirigami.ApplicationWindow {
                     icon.name: (player.repeat_mode === "one")
                                 ? "media-playlist-repeat-song"
                                 : "media-playlist-repeat"
-                    opacity: (player.repeat_mode !== "off") ? 1.0 : 0.50
+                    opacity: (player.repeat_mode !== "off") ? 1.0 : 0.9
                     icon.color: (player.repeat_mode !== "off")
-                                 ? Kirigami.Theme.highlightColor
-                                 : Kirigami.Theme.textColor
+                                 ? root.accentColor
+                                 : "#5e5e66"
                     onClicked: player.cycleRepeat()
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.text: {
