@@ -600,7 +600,8 @@ Kirigami.ApplicationWindow {
         Kirigami.Theme.highlightColor: player.current_accent
 
         background: Rectangle {
-            color: root.bgHeader
+            // Darker end of the window gradient (top).
+            color: Qt.tint("#eaeaef", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.28))
 
             // Bottom border line
             Rectangle {
@@ -727,7 +728,8 @@ Kirigami.ApplicationWindow {
         Kirigami.Theme.highlightColor: player.current_accent
 
         background: Rectangle {
-            color: root.bgHeader
+            // Lighter end of the window gradient (bottom).
+            color: Qt.tint("#f6f6f9", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04))
 
             // Top border
             Rectangle {
@@ -1126,10 +1128,14 @@ Kirigami.ApplicationWindow {
         topPadding: 0
         bottomPadding: 0
 
-        // Full-window light base
+        // Full-window base — a vertical wash of the cover's colour: more saturated
+        // up top, fading lighter toward the bottom (gives the flat tint depth).
         Rectangle {
             anchors.fill: parent
-            color: root.bgBase
+            gradient: Gradient {
+                GradientStop { position: 0.0; color: Qt.tint("#ededf1", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.24)) }
+                GradientStop { position: 1.0; color: Qt.tint("#f5f5f8", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.03)) }
+            }
         }
 
         RowLayout {
@@ -1142,7 +1148,12 @@ Kirigami.ApplicationWindow {
                 Layout.preferredWidth: 216
                 Layout.fillHeight: true
 
-                color: root.bgSidebar
+                // Stronger vertical wash than the content — the sidebar is the
+                // most saturated surface, darker at the top, easing lighter below.
+                gradient: Gradient {
+                    GradientStop { position: 0.0; color: Qt.tint("#e3e3ea", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.36)) }
+                    GradientStop { position: 1.0; color: Qt.tint("#ececf0", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.12)) }
+                }
 
                 // Right border
                 Rectangle {
