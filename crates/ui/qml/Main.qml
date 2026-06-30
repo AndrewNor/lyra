@@ -600,8 +600,8 @@ Kirigami.ApplicationWindow {
         Kirigami.Theme.highlightColor: player.current_accent
 
         background: Rectangle {
-            // Darker end of the window gradient (top).
-            color: Qt.tint("#eaeaef", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.28))
+            // Lightest end of the window gradient (top).
+            color: Qt.tint("#f6f6f9", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.02))
 
             // Bottom border line
             Rectangle {
@@ -730,8 +730,8 @@ Kirigami.ApplicationWindow {
         Kirigami.Theme.highlightColor: player.current_accent
 
         background: Rectangle {
-            // Lighter end of the window gradient (bottom).
-            color: Qt.tint("#f6f6f9", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04))
+            // Deepest end of the window gradient (bottom).
+            color: Qt.tint("#e3e3ea", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.34))
 
             // Top border
             Rectangle {
@@ -1130,31 +1130,34 @@ Kirigami.ApplicationWindow {
         topPadding: 0
         bottomPadding: 0
 
-        // Full-window base — a vertical wash of the cover's colour: more saturated
-        // up top, fading lighter toward the bottom (gives the flat tint depth).
+        // Full-window base — a vertical wash of the cover's colour: lightest up
+        // top, deepening toward the bottom (gives the flat tint depth).
         Rectangle {
             anchors.fill: parent
             gradient: Gradient {
-                GradientStop { position: 0.0; color: Qt.tint("#ededf1", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.24)) }
-                GradientStop { position: 1.0; color: Qt.tint("#f5f5f8", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.03)) }
+                GradientStop { position: 0.0; color: Qt.tint("#f5f5f8", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.03)) }
+                GradientStop { position: 1.0; color: Qt.tint("#ededf1", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.24)) }
             }
         }
 
         RowLayout {
             anchors.fill: parent
-            spacing: 0
+            anchors.margins: 10
+            spacing: 10
 
             // ── Left sidebar ────────────────────────────────────────────────
             Rectangle {
                 id: sidebar
                 Layout.preferredWidth: 216
                 Layout.fillHeight: true
+                radius: 18
+                clip: true
 
                 // Stronger vertical wash than the content — the sidebar is the
-                // most saturated surface, darker at the top, easing lighter below.
+                // most saturated surface, lightest at the top, deepening below.
                 gradient: Gradient {
-                    GradientStop { position: 0.0; color: Qt.tint("#e3e3ea", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.36)) }
-                    GradientStop { position: 1.0; color: Qt.tint("#ececf0", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.12)) }
+                    GradientStop { position: 0.0; color: Qt.tint("#ececf0", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.12)) }
+                    GradientStop { position: 1.0; color: Qt.tint("#e3e3ea", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.36)) }
                 }
 
                 // Right border
@@ -1434,6 +1437,17 @@ Kirigami.ApplicationWindow {
             Item {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
+
+                // Rounded content-card surface (lightest of the panels, subtly
+                // tinted, deepening downward like the rest of the gradient).
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 18
+                    gradient: Gradient {
+                        GradientStop { position: 0.0; color: Qt.tint("#fbfbfd", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04)) }
+                        GradientStop { position: 1.0; color: Qt.tint("#f3f3f7", Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.13)) }
+                    }
+                }
 
                 // ── Songs / detail track lists ───────────────────────────────
                 Item {
@@ -2358,6 +2372,7 @@ Kirigami.ApplicationWindow {
                 id: nowPlayingPanel
                 Layout.preferredWidth: root.nowPlayingVisible ? 296 : 0
                 Layout.fillHeight: true
+                radius: 18
                 clip: true
                 visible: root.nowPlayingVisible
 
@@ -2391,9 +2406,9 @@ Kirigami.ApplicationWindow {
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.42) }
-                            GradientStop { position: 0.55; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.14) }
-                            GradientStop { position: 1.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04) }
+                            GradientStop { position: 0.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.04) }
+                            GradientStop { position: 0.45; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.14) }
+                            GradientStop { position: 1.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.42) }
                         }
                     }
                 }
