@@ -15,11 +15,13 @@ Kirigami.ApplicationWindow {
     minimumHeight: 480
 
     // ── Design tokens — light & airy; accent pulled from the current cover ──────
-    readonly property color bgBase:      "#ffffff"
-    readonly property color bgSidebar:   "#f6f6f8"
-    readonly property color bgContent:   "#ffffff"
+    // Soft neutral canvas so the white now-playing panel + artwork read as the
+    // bright focal points, instead of one big flat white field.
+    readonly property color bgBase:      "#f2f2f5"
+    readonly property color bgSidebar:   "#e9e9ee"
+    readonly property color bgContent:   "#f2f2f5"
     readonly property color bgPanel:     "#ffffff"
-    readonly property color bgHeader:    "#ffffff"
+    readonly property color bgHeader:    "#f2f2f5"
     // No divider lines — separation is by spacing. Kept transparent so any
     // remaining separator rectangles that reference it simply vanish.
     readonly property color sepColor:    "transparent"
@@ -622,6 +624,12 @@ Kirigami.ApplicationWindow {
                 id: searchField
                 Layout.preferredWidth: 280
                 placeholderText: "Search tracks…"
+                color: root.textPrimary
+                placeholderTextColor: root.textDim
+                background: Rectangle {
+                    radius: 9
+                    color: Qt.rgba(0, 0, 0, 0.05)
+                }
                 onAccepted: {
                     if (text.trim().length === 0) {
                         library.loadAll()
