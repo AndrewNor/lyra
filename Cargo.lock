@@ -1701,6 +1701,7 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "image",
  "lyra-core",
  "lyra-db",
  "lyra-engine",
