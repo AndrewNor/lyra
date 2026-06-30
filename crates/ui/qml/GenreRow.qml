@@ -17,7 +17,7 @@ Item {
     // ── Background hover ──────────────────────────────────────────────────
     Rectangle {
         anchors.fill: parent
-        color: rowHover.containsMouse ? Qt.rgba(1, 1, 1, 0.05) : "transparent"
+        color: rowHover.containsMouse ? Qt.rgba(0, 0, 0, 0.05) : "transparent"
 
         Behavior on color { ColorAnimation { duration: 120 } }
     }
@@ -29,7 +29,7 @@ Item {
         anchors.right: parent.right
         anchors.leftMargin: Kirigami.Units.largeSpacing + 58
         height: 1
-        color: Qt.rgba(1, 1, 1, 0.07)
+        color: "transparent"
     }
 
     RowLayout {
@@ -51,23 +51,20 @@ Item {
                 anchors.verticalCenterOffset: 4
                 radius: (parent.width + 4) / 2
                 color: "#000000"
-                opacity: 0.35
+                opacity: 0.14
             }
 
             Rectangle {
                 anchors.fill: parent
                 radius: parent.width / 2
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: Qt.rgba(0.18, 0.20, 0.32, 1.0) }
-                    GradientStop { position: 1.0; color: Qt.rgba(0.10, 0.10, 0.22, 1.0) }
-                }
+                color: Qt.rgba(0, 0, 0, 0.06)
 
                 Kirigami.Icon {
                     anchors.centerIn: parent
                     source: "tag"
                     width: 22
                     height: 22
-                    color: Qt.rgba(1, 1, 1, 0.35)
+                    color: "#b0b0b6"
                 }
             }
         }
@@ -85,7 +82,7 @@ Item {
                       : "(unknown)"
                 font.weight: Font.SemiBold
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 1.00
-                color: Qt.rgba(1, 1, 1, 0.92)
+                color: "#1d1d1f"
             }
 
             Controls.Label {
@@ -96,7 +93,7 @@ Item {
                     var tc = root.genreData.track_count || 0
                     return tc + (tc === 1 ? " track" : " tracks")
                 }
-                color: Qt.rgba(1, 1, 1, 0.42)
+                color: "#86868b"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
             }
         }
@@ -106,7 +103,7 @@ Item {
             source: "arrow-right"
             width: 14
             height: 14
-            color: Qt.rgba(1, 1, 1, rowHover.containsMouse ? 0.70 : 0.28)
+            color: rowHover.containsMouse ? "#3a3a3c" : "#b0b0b6"
 
             Behavior on color { ColorAnimation { duration: 120 } }
         }

@@ -21,6 +21,10 @@ pub mod qobject {
         #[qproperty(QString, current_title)]
         #[qproperty(QString, current_artist)]
         #[qproperty(QString, current_cover_thumb)]
+        /// Accent colour (hex `#rrggbb`) sampled from the current cover art.
+        /// Drives the album-art-tinted UI accent.  Falls back to a default when
+        /// there is no cover.
+        #[qproperty(QString, current_accent)]
         #[qproperty(QString, queue_json)]
         /// Lyrics for the current track as JSON: `{"synced":bool,"lines":[{"t":number|null,"text":string}]}`.
         #[qproperty(QString, lyrics_json)]
@@ -240,6 +244,95 @@ fn build_eq_bands_json(gains: &[f32; 10]) -> String {
     out
 }
 
+// ── Album-art accent colour extraction ───────────────────────────────────────
+
+/// Fallback accent when there is no cover (or extraction fails) — a calm indigo
+/// that reads well on the light theme.
+const DEFAULT_ACCENT: &str = "#5b62d6";
+
+/// Sample a vibrant, light-theme-friendly accent colour from a cover thumbnail.
+///
+/// Loads the (already small) thumbnail, downsamples further, and computes a
+/// saturation-weighted average that favours vivid, mid-lightness pixels and
+/// ignores near-black / near-white / grey.  The result is pushed into a
+/// controlled saturation/lightness band so it always works as an accent on a
+/// near-white background.  Returns `DEFAULT_ACCENT` on any failure or for
+/// (near-)monochrome art.  Never panics.
+fn accent_from_cover(cover_thumb: &str) -> String {
+    if cover_thumb.is_empty() {
+        return DEFAULT_ACCENT.to_owned();
+    }
+    let img = match image::open(cover_thumb) {
+        Ok(i) => i,
+        Err(_) => return DEFAULT_ACCENT.to_owned(),
+    };
+    let small = img.thumbnail(48, 48).to_rgb8();
+
+    let (mut wr, mut wg, mut wb, mut wsum) = (0f64, 0f64, 0f64, 0f64);
+    for px in small.pixels() {
+        let r = px[0] as f64 / 255.0;
+        let g = px[1] as f64 / 255.0;
+        let b = px[2] as f64 / 255.0;
+        let (_, s, l) = rgb_to_hsl(r, g, b);
+        // Peak weight at mid-lightness; zero at pure black/white.
+        let light_window = 1.0 - (2.0 * l - 1.0).powi(2);
+        let w = s * s * light_window;
+        wr += r * w;
+        wg += g * w;
+        wb += b * w;
+        wsum += w;
+    }
+
+    if wsum < 1e-6 {
+        return DEFAULT_ACCENT.to_owned(); // monochrome / no colour to pull
+    }
+
+    let (h, s, l) = rgb_to_hsl(wr / wsum, wg / wsum, wb / wsum);
+    // Force into a band that reads as a confident accent on a light ground.
+    let (r, g, b) = hsl_to_rgb(h, s.max(0.55), l.clamp(0.42, 0.55));
+    format!(
+        "#{:02x}{:02x}{:02x}",
+        (r * 255.0).round() as u8,
+        (g * 255.0).round() as u8,
+        (b * 255.0).round() as u8
+    )
+}
+
+fn rgb_to_hsl(r: f64, g: f64, b: f64) -> (f64, f64, f64) {
+    let max = r.max(g).max(b);
+    let min = r.min(g).min(b);
+    let l = (max + min) / 2.0;
+    if (max - min).abs() < 1e-9 {
+        return (0.0, 0.0, l);
+    }
+    let d = max - min;
+    let s = d / (1.0 - (2.0 * l - 1.0).abs());
+    let h = if max == r {
+        ((g - b) / d).rem_euclid(6.0)
+    } else if max == g {
+        (b - r) / d + 2.0
+    } else {
+        (r - g) / d + 4.0
+    } * 60.0;
+    (h, s, l)
+}
+
+fn hsl_to_rgb(h: f64, s: f64, l: f64) -> (f64, f64, f64) {
+    let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
+    let hp = h / 60.0;
+    let x = c * (1.0 - (hp.rem_euclid(2.0) - 1.0).abs());
+    let (r1, g1, b1) = match hp as i32 {
+        0 => (c, x, 0.0),
+        1 => (x, c, 0.0),
+        2 => (0.0, c, x),
+        3 => (0.0, x, c),
+        4 => (x, 0.0, c),
+        _ => (c, 0.0, x),
+    };
+    let m = l - c / 2.0;
+    (r1 + m, g1 + m, b1 + m)
+}
+
 // ── Row type for the cached playlist ────────────────────────────────────────
 
 #[derive(Clone)]
@@ -259,6 +352,8 @@ pub struct PlayerRust {
     current_title: QString,
     current_artist: QString,
     current_cover_thumb: QString,
+    /// Accent colour (hex) sampled from the current cover.
+    current_accent: QString,
     queue_json: QString,
     /// Lyrics for the current track, serialised as JSON.
     lyrics_json: QString,
@@ -320,6 +415,7 @@ impl Default for PlayerRust {
             current_title: QString::from(""),
             current_artist: QString::from(""),
             current_cover_thumb: QString::from(""),
+            current_accent: QString::from(DEFAULT_ACCENT),
             queue_json: QString::from("[]"),
             lyrics_json: QString::from(EMPTY_LYRICS_JSON),
             position_secs: 0.0,
@@ -520,6 +616,8 @@ impl qobject::Player {
                 self.as_mut().set_current_title(QString::from(title));
                 self.as_mut().set_current_artist(QString::from(artist));
                 self.as_mut().set_current_cover_thumb(QString::from(cover_thumb));
+                let accent = accent_from_cover(cover_thumb);
+                self.as_mut().set_current_accent(QString::from(accent.as_str()));
                 self.as_mut().set_state_text(QString::from("Playing"));
                 // Reset position and set duration for the new track.
                 self.as_mut().set_position_secs(0.0);
@@ -1074,6 +1172,7 @@ impl qobject::Player {
                 self.as_mut().set_current_title(QString::from(row.title.as_str()));
                 self.as_mut().set_current_artist(QString::from(row.artist.as_str()));
                 self.as_mut().set_current_cover_thumb(QString::from(row.cover_thumb.as_str()));
+                self.as_mut().set_current_accent(QString::from(accent_from_cover(&row.cover_thumb).as_str()));
                 self.as_mut().set_duration_secs(row.duration_ms as f64 / 1000.0);
                 self.as_mut().set_position_secs(session.position_secs);
                 self.as_mut().set_state_text(QString::from("Stopped"));
@@ -1135,6 +1234,7 @@ impl qobject::Player {
         self.as_mut().set_current_title(QString::from(row.title.as_str()));
         self.as_mut().set_current_artist(QString::from(row.artist.as_str()));
         self.as_mut().set_current_cover_thumb(QString::from(row.cover_thumb.as_str()));
+        self.as_mut().set_current_accent(QString::from(accent_from_cover(&row.cover_thumb).as_str()));
         self.as_mut().set_duration_secs(row.duration_ms as f64 / 1000.0);
         self.as_mut().set_position_secs(0.0);
         self.as_mut().set_state_text(QString::from("Stopped"));

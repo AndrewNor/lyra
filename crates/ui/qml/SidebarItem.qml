@@ -43,7 +43,7 @@ Item {
                              (Kirigami.Theme.highlightColor || "#3daee9").b,
                              0.22
                          )
-                       : Qt.rgba(1, 1, 1, 0.05)
+                       : Qt.rgba(0, 0, 0, 0.05)
             }
             GradientStop {
                 position: 1.0
@@ -94,7 +94,7 @@ Item {
             height: 16
             color: root.active
                    ? (Kirigami.Theme.highlightColor || "#3daee9")
-                   : Qt.rgba(1, 1, 1, 0.60)
+                   : "#86868b"
             opacity: root.enabled ? 1.0 : 0.30
 
             Behavior on color { ColorAnimation { duration: 150 } }
@@ -106,10 +106,10 @@ Item {
             elide: Text.ElideRight
             color: root.active
                    ? (Kirigami.Theme.highlightColor || "#3daee9")
-                   : Qt.rgba(1, 1, 1, 0.75)
+                   : "#3a3a3c"
             opacity: root.enabled ? 1.0 : 0.30
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.92
-            font.weight: root.active ? Font.SemiBold : Font.Normal
+            font.weight: root.active ? 600 : 400
             font.letterSpacing: root.active ? 0.2 : 0.0
 
             Behavior on color { ColorAnimation { duration: 150 } }

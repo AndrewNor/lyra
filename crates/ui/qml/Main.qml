@@ -14,17 +14,31 @@ Kirigami.ApplicationWindow {
     minimumWidth: 700
     minimumHeight: 480
 
-    // ── Design tokens ──────────────────────────────────────────────────────────
-    readonly property color bgBase:      "#0c0c12"
-    readonly property color bgSidebar:   "#0f0f18"
-    readonly property color bgContent:   "#0c0c12"
-    readonly property color bgPanel:     "#0f0f18"
-    readonly property color bgHeader:    "#0d0d16"
-    readonly property color sepColor:    Qt.rgba(1, 1, 1, 0.08)
-    readonly property color textPrimary: Qt.rgba(1, 1, 1, 0.92)
-    readonly property color textDim:     Qt.rgba(1, 1, 1, 0.42)
-    readonly property color textFaint:   Qt.rgba(1, 1, 1, 0.22)
-    readonly property color accentColor: Kirigami.Theme.highlightColor || "#3daee9"
+    // ── Design tokens — light & airy; accent pulled from the current cover ──────
+    readonly property color bgBase:      "#ffffff"
+    readonly property color bgSidebar:   "#f6f6f8"
+    readonly property color bgContent:   "#ffffff"
+    readonly property color bgPanel:     "#ffffff"
+    readonly property color bgHeader:    "#ffffff"
+    // No divider lines — separation is by spacing. Kept transparent so any
+    // remaining separator rectangles that reference it simply vanish.
+    readonly property color sepColor:    "transparent"
+    readonly property color textPrimary: "#1d1d1f"
+    readonly property color textDim:     "#86868b"
+    readonly property color textFaint:   "#b0b0b6"
+    // Accent + ambient tint are sampled from the current album art (Rust side).
+    readonly property color accentColor: player.current_accent
+    readonly property color accentSoft:  Qt.rgba(accentColor.r, accentColor.g, accentColor.b, 0.12)
+    readonly property color hoverColor:  Qt.rgba(0, 0, 0, 0.045)
+
+    // Force a light colour scheme so Kirigami-styled controls (switches, combos,
+    // scrollbars, menus) match, and route the dynamic accent through the
+    // standard highlight colour so child components pick it up automatically.
+    Kirigami.Theme.inherit: false
+    Kirigami.Theme.colorSet: Kirigami.Theme.View
+    Kirigami.Theme.backgroundColor: "#ffffff"
+    Kirigami.Theme.textColor: "#1d1d1f"
+    Kirigami.Theme.highlightColor: player.current_accent
 
     // ── QObject instances ───────────────────────────────────────────────────
     Library { id: library }
@@ -146,9 +160,9 @@ Kirigami.ApplicationWindow {
         standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
 
         background: Rectangle {
-            color: "#1b1b26"
+            color: "#ffffff"
             radius: 14
-            border.color: Qt.rgba(1, 1, 1, 0.10)
+            border.color: Qt.rgba(0, 0, 0, 0.10)
             border.width: 1
         }
         header: Controls.Label {
@@ -176,7 +190,7 @@ Kirigami.ApplicationWindow {
                 placeholderText: "My Playlist"
                 color: root.textPrimary
                 background: Rectangle {
-                    color: Qt.rgba(1, 1, 1, 0.08)
+                    color: Qt.rgba(0, 0, 0, 0.05)
                     radius: 6
                 }
                 Keys.onReturnPressed: newPlaylistDialog.accept()
@@ -226,9 +240,9 @@ Kirigami.ApplicationWindow {
         standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
 
         background: Rectangle {
-            color: "#1b1b26"
+            color: "#ffffff"
             radius: 14
-            border.color: Qt.rgba(1, 1, 1, 0.10)
+            border.color: Qt.rgba(0, 0, 0, 0.10)
             border.width: 1
         }
         header: Controls.Label {
@@ -256,7 +270,7 @@ Kirigami.ApplicationWindow {
                 placeholderText: "Playlist name"
                 color: root.textPrimary
                 background: Rectangle {
-                    color: Qt.rgba(1, 1, 1, 0.08)
+                    color: Qt.rgba(0, 0, 0, 0.05)
                     radius: 6
                 }
                 Keys.onReturnPressed: renamePlaylistDialog.accept()
@@ -292,9 +306,9 @@ Kirigami.ApplicationWindow {
         padding: 0
 
         background: Rectangle {
-            color: "#1b1b26"
+            color: "#ffffff"
             radius: 14
-            border.color: Qt.rgba(1, 1, 1, 0.10)
+            border.color: Qt.rgba(0, 0, 0, 0.10)
             border.width: 1
         }
 
@@ -420,7 +434,7 @@ Kirigami.ApplicationWindow {
                     Layout.fillWidth: true
                     placeholderText: "Playlist name"
                     color: root.textPrimary
-                    background: Rectangle { color: Qt.rgba(1,1,1,0.08); radius: 6 }
+                    background: Rectangle { color: Qt.rgba(0,0,0,0.05); radius: 6 }
                 }
             }
 
@@ -493,7 +507,7 @@ Kirigami.ApplicationWindow {
                         text: modelData ? (modelData.value || "") : ""
                         placeholderText: "value"
                         color: root.textPrimary
-                        background: Rectangle { color: Qt.rgba(1,1,1,0.08); radius: 6 }
+                        background: Rectangle { color: Qt.rgba(0,0,0,0.05); radius: 6 }
                         onTextChanged: {
                             var rules = root._spRules.slice()
                             rules[index] = {"field": rules[index].field, "op": rules[index].op, "value": text}
@@ -734,7 +748,7 @@ Kirigami.ApplicationWindow {
                         anchors.verticalCenterOffset: 6
                         radius: 11
                         color: "#000000"
-                        opacity: 0.50
+                        opacity: 0.14
                     }
                     Rectangle {
                         anchors.centerIn: parent
@@ -743,13 +757,13 @@ Kirigami.ApplicationWindow {
                         anchors.verticalCenterOffset: 3
                         radius: 10
                         color: "#000000"
-                        opacity: 0.25
+                        opacity: 0.10
                     }
 
                     Rectangle {
                         anchors.fill: parent
                         radius: 9
-                        color: Qt.rgba(1, 1, 1, 0.08)
+                        color: Qt.rgba(0, 0, 0, 0.05)
                         clip: true
 
                         Image {
@@ -768,7 +782,7 @@ Kirigami.ApplicationWindow {
                             source: "media-optical-audio"
                             width: 26
                             height: 26
-                            color: Qt.rgba(1, 1, 1, 0.25)
+                            color: root.textFaint
                             visible: !transportCover.visible
                         }
                     }
@@ -971,7 +985,7 @@ Kirigami.ApplicationWindow {
                             width: seekBar.availableWidth
                             height: 3
                             radius: 2
-                            color: Qt.rgba(1, 1, 1, 0.14)
+                            color: Qt.rgba(0, 0, 0, 0.10)
 
                             Rectangle {
                                 width: seekBar.visualPosition * parent.width
@@ -1050,13 +1064,13 @@ Kirigami.ApplicationWindow {
                             width: volumeSlider.availableWidth
                             height: 3
                             radius: 2
-                            color: Qt.rgba(1, 1, 1, 0.12)
+                            color: Qt.rgba(0, 0, 0, 0.10)
 
                             Rectangle {
                                 width: volumeSlider.visualPosition * parent.width
                                 height: parent.height
                                 radius: 2
-                                color: Qt.rgba(1, 1, 1, 0.35)
+                                color: root.accentColor
                             }
                         }
 
@@ -1066,7 +1080,7 @@ Kirigami.ApplicationWindow {
                             width: 10
                             height: 10
                             radius: 5
-                            color: Qt.rgba(1, 1, 1, 0.80)
+                            color: root.accentColor
                         }
                     }
                 }
@@ -1083,14 +1097,10 @@ Kirigami.ApplicationWindow {
         topPadding: 0
         bottomPadding: 0
 
-        // Full-window dark base gradient (depth, not flat)
+        // Full-window light base
         Rectangle {
             anchors.fill: parent
-            gradient: Gradient {
-                GradientStop { position: 0.0; color: "#10101a" }
-                GradientStop { position: 0.5; color: root.bgBase }
-                GradientStop { position: 1.0; color: "#0a0a10" }
-            }
+            color: root.bgBase
         }
 
         RowLayout {
@@ -1103,10 +1113,7 @@ Kirigami.ApplicationWindow {
                 Layout.preferredWidth: 216
                 Layout.fillHeight: true
 
-                gradient: Gradient {
-                    GradientStop { position: 0.0; color: "#12121e" }
-                    GradientStop { position: 1.0; color: "#0e0e18" }
-                }
+                color: root.bgSidebar
 
                 // Right border
                 Rectangle {
@@ -1352,7 +1359,7 @@ Kirigami.ApplicationWindow {
                         Layout.topMargin: 4
                         text: "Sources"
                         font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.70
-                        color: Qt.rgba(1, 1, 1, 0.15)
+                        color: root.textFaint
                         font.capitalization: Font.AllUppercase
                         font.letterSpacing: 1.4
                         font.weight: Font.Medium
@@ -1421,7 +1428,7 @@ Kirigami.ApplicationWindow {
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: Qt.rgba(1, 1, 1, 0.03)
+                                color: Qt.rgba(0, 0, 0, 0.03)
                             }
 
                             RowLayout {
@@ -1549,7 +1556,7 @@ Kirigami.ApplicationWindow {
 
                                     Rectangle {
                                         anchors.fill: parent
-                                        color: Qt.rgba(1, 1, 1, 0.03)
+                                        color: Qt.rgba(0, 0, 0, 0.03)
                                     }
 
                                     RowLayout {
@@ -1717,7 +1724,7 @@ Kirigami.ApplicationWindow {
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: Qt.rgba(1, 1, 1, 0.03)
+                                color: Qt.rgba(0, 0, 0, 0.03)
                             }
 
                             RowLayout {
@@ -1854,14 +1861,14 @@ Kirigami.ApplicationWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: eqCardContent.implicitHeight + 24
                                         radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.04)
+                                        color: Qt.rgba(0, 0, 0, 0.03)
 
                                         // Card border
                                         Rectangle {
                                             anchors.fill: parent
                                             radius: parent.radius
                                             color: "transparent"
-                                            border.color: Qt.rgba(1, 1, 1, 0.07)
+                                            border.color: "transparent"
                                             border.width: 1
                                         }
 
@@ -1940,7 +1947,7 @@ Kirigami.ApplicationWindow {
                                                                 width: 3
                                                                 height: eqSlider.availableHeight
                                                                 radius: 2
-                                                                color: Qt.rgba(1, 1, 1, 0.12)
+                                                                color: Qt.rgba(0, 0, 0, 0.10)
 
                                                                 // Filled portion (from center = 0 dB)
                                                                 Rectangle {
@@ -1963,7 +1970,7 @@ Kirigami.ApplicationWindow {
                                                                     x: -2
                                                                     width: 7
                                                                     height: 1
-                                                                    color: Qt.rgba(1, 1, 1, 0.25)
+                                                                    color: Qt.rgba(0, 0, 0, 0.18)
                                                                 }
                                                             }
 
@@ -1973,7 +1980,7 @@ Kirigami.ApplicationWindow {
                                                                 width: eqSlider.pressed || eqSlider.hovered ? 16 : 12
                                                                 height: width
                                                                 radius: width / 2
-                                                                color: "white"
+                                                                color: root.accentColor
 
                                                                 Rectangle {
                                                                     anchors.centerIn: parent
@@ -2073,7 +2080,7 @@ Kirigami.ApplicationWindow {
                                         Layout.fillWidth: true
                                         implicitHeight: bitPerfectRow.implicitHeight + 24
                                         radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.04)
+                                        color: Qt.rgba(0, 0, 0, 0.03)
 
                                         Rectangle {
                                             anchors.fill: parent
@@ -2081,7 +2088,7 @@ Kirigami.ApplicationWindow {
                                             color: "transparent"
                                             border.color: player.bit_perfect
                                                           ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.35)
-                                                          : Qt.rgba(1, 1, 1, 0.07)
+                                                          : "transparent"
                                             border.width: 1
 
                                             Behavior on border.color { ColorAnimation { duration: 200 } }
@@ -2129,7 +2136,7 @@ Kirigami.ApplicationWindow {
                                         Layout.topMargin: 10
                                         implicitHeight: crossfadeCardContent.implicitHeight + 24
                                         radius: 12
-                                        color: Qt.rgba(1, 1, 1, 0.04)
+                                        color: Qt.rgba(0, 0, 0, 0.03)
 
                                         Rectangle {
                                             anchors.fill: parent
@@ -2137,7 +2144,7 @@ Kirigami.ApplicationWindow {
                                             color: "transparent"
                                             border.color: player.crossfade_secs > 0
                                                           ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.35)
-                                                          : Qt.rgba(1, 1, 1, 0.07)
+                                                          : "transparent"
                                             border.width: 1
 
                                             Behavior on border.color { ColorAnimation { duration: 200 } }
@@ -2240,7 +2247,7 @@ Kirigami.ApplicationWindow {
 
                             Rectangle {
                                 anchors.fill: parent
-                                color: Qt.rgba(1, 1, 1, 0.03)
+                                color: Qt.rgba(0, 0, 0, 0.03)
                             }
 
                             RowLayout {
@@ -2309,8 +2316,8 @@ Kirigami.ApplicationWindow {
                 clip: true
                 visible: root.nowPlayingVisible
 
-                // Base color — will be overlaid by ambient backdrop
-                color: "#0d0d1a"
+                // Base color — light panel; ambient wash sits on top
+                color: "#ffffff"
 
                 Behavior on Layout.preferredWidth {
                     NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
@@ -2325,9 +2332,9 @@ Kirigami.ApplicationWindow {
                     z: 10
                 }
 
-                // ── Ambient album-art backdrop ───────────────────────────────
-                // A blurred version of the cover fills the panel and glows with
-                // the song's own colours.
+                // ── Ambient album-art wash ───────────────────────────────────
+                // Soft light wash: a pale accent tint at the top fading to white,
+                // letting the cover's colour gently colour the panel.
                 Item {
                     id: ambientBackdrop
                     anchors.fill: parent
@@ -2336,49 +2343,21 @@ Kirigami.ApplicationWindow {
 
                     Behavior on opacity { NumberAnimation { duration: 600; easing.type: Easing.InOutCubic } }
 
-                    // Source image (invisible — fed into MultiEffect)
-                    Image {
-                        id: backdropSource
-                        anchors.fill: parent
-                        source: (player.current_cover_thumb || "").length > 0
-                                ? "file://" + player.current_cover_thumb
-                                : ""
-                        fillMode: Image.PreserveAspectCrop
-                        visible: false
-                        asynchronous: true
-                    }
-
-                    // MultiEffect blur
-                    MultiEffect {
-                        source: backdropSource
-                        anchors.fill: backdropSource
-                        blurEnabled: true
-                        blurMax: 64
-                        blur: 1.0
-                        autoPaddingEnabled: false
-                        opacity: 0.35
-                    }
-
-                    // Dark gradient overlay for legibility — covers most of the panel
                     Rectangle {
                         anchors.fill: parent
                         gradient: Gradient {
-                            GradientStop { position: 0.0; color: Qt.rgba(0.05, 0.05, 0.10, 0.55) }
-                            GradientStop { position: 0.45; color: Qt.rgba(0.05, 0.05, 0.10, 0.80) }
-                            GradientStop { position: 1.0; color: Qt.rgba(0.05, 0.05, 0.10, 0.95) }
+                            GradientStop { position: 0.0; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.16) }
+                            GradientStop { position: 0.5; color: Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.05) }
+                            GradientStop { position: 1.0; color: "#ffffff" }
                         }
                     }
                 }
 
-                // ── Idle gradient (shown when no track) ──────────────────────
+                // ── Idle background (shown when no track) ─────────────────────
                 Rectangle {
                     anchors.fill: parent
                     opacity: (player.current_cover_thumb || "").length > 0 ? 0.0 : 1.0
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: "#14142a" }
-                        GradientStop { position: 0.5; color: "#0d0d1a" }
-                        GradientStop { position: 1.0; color: "#090912" }
-                    }
+                    color: "#ffffff"
 
                     Behavior on opacity { NumberAnimation { duration: 600 } }
                 }
@@ -2405,7 +2384,7 @@ Kirigami.ApplicationWindow {
                             anchors.verticalCenterOffset: 18
                             radius: 20
                             color: "#000000"
-                            opacity: 0.60
+                            opacity: 0.14
                         }
                         // Middle shadow
                         Rectangle {
@@ -2415,14 +2394,14 @@ Kirigami.ApplicationWindow {
                             anchors.verticalCenterOffset: 10
                             radius: 18
                             color: "#000000"
-                            opacity: 0.35
+                            opacity: 0.10
                         }
 
                         Rectangle {
                             id: npCoverFrame
                             anchors.fill: parent
                             radius: 16
-                            color: Qt.rgba(1, 1, 1, 0.07)
+                            color: Qt.rgba(0, 0, 0, 0.05)
                             clip: true
 
                             Image {
@@ -2440,11 +2419,7 @@ Kirigami.ApplicationWindow {
                                 anchors.fill: parent
                                 visible: !npCover.visible
                                 radius: 16
-                                gradient: Gradient {
-                                    GradientStop { position: 0.0; color: "#1e1e3a" }
-                                    GradientStop { position: 0.6; color: "#14142a" }
-                                    GradientStop { position: 1.0; color: "#0d0d1e" }
-                                }
+                                color: Qt.rgba(0, 0, 0, 0.05)
 
                                 // Abstract music note icon
                                 Kirigami.Icon {
@@ -2452,7 +2427,7 @@ Kirigami.ApplicationWindow {
                                     source: "media-optical-audio"
                                     width: 72
                                     height: 72
-                                    color: Qt.rgba(1, 1, 1, 0.14)
+                                    color: root.textFaint
                                 }
                             }
 
@@ -2464,7 +2439,7 @@ Kirigami.ApplicationWindow {
                                 height: parent.height * 0.3
                                 radius: 16
                                 gradient: Gradient {
-                                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.06) }
+                                    GradientStop { position: 0.0; color: Qt.rgba(1, 1, 1, 0.18) }
                                     GradientStop { position: 1.0; color: "transparent" }
                                 }
                                 z: 2
@@ -2507,7 +2482,7 @@ Kirigami.ApplicationWindow {
                             radius: height / 2
                             color: (player.state_text === "Playing")
                                    ? Qt.rgba(root.accentColor.r, root.accentColor.g, root.accentColor.b, 0.18)
-                                   : Qt.rgba(1, 1, 1, 0.07)
+                                   : Qt.rgba(0, 0, 0, 0.05)
                         }
 
                         Controls.Label {
@@ -2720,7 +2695,7 @@ Kirigami.ApplicationWindow {
                                     width: 40
                                     height: 40
                                     radius: 7
-                                    color: Qt.rgba(1, 1, 1, 0.07)
+                                    color: Qt.rgba(0, 0, 0, 0.05)
                                     clip: true
 
                                     // Shadow
@@ -2731,7 +2706,7 @@ Kirigami.ApplicationWindow {
                                         anchors.verticalCenterOffset: 3
                                         radius: 9
                                         color: "#000000"
-                                        opacity: 0.30
+                                        opacity: 0.10
                                         z: -1
                                     }
 
@@ -2751,7 +2726,7 @@ Kirigami.ApplicationWindow {
                                         source: "audio-x-generic"
                                         width: 18
                                         height: 18
-                                        color: Qt.rgba(1, 1, 1, 0.25)
+                                        color: root.textFaint
                                         visible: !qCoverImg.visible
                                     }
                                 }
@@ -2784,7 +2759,7 @@ Kirigami.ApplicationWindow {
                                 anchors.right: parent.right
                                 anchors.leftMargin: 50
                                 height: 1
-                                color: Qt.rgba(1, 1, 1, 0.06)
+                                color: "transparent"
                             }
                         }
 

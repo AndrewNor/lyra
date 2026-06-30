@@ -31,7 +31,7 @@ Item {
                 anchors.verticalCenterOffset: 10
                 radius: 14
                 color: "#000000"
-                opacity: cardHover.containsMouse ? 0.55 : 0.35
+                opacity: cardHover.containsMouse ? 0.18 : 0.14
 
                 Behavior on opacity { NumberAnimation { duration: 180 } }
             }
@@ -42,7 +42,7 @@ Item {
                 anchors.verticalCenterOffset: 5
                 radius: 13
                 color: "#000000"
-                opacity: cardHover.containsMouse ? 0.30 : 0.18
+                opacity: cardHover.containsMouse ? 0.12 : 0.08
 
                 Behavior on opacity { NumberAnimation { duration: 180 } }
             }
@@ -51,7 +51,7 @@ Item {
                 id: coverFrame
                 anchors.fill: parent
                 radius: 12
-                color: Qt.rgba(1, 1, 1, 0.08)
+                color: Qt.rgba(0, 0, 0, 0.06)
                 clip: true
 
                 // Hover scale applied to this item via transform
@@ -82,17 +82,14 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     visible: !coverImg.visible
-                    gradient: Gradient {
-                        GradientStop { position: 0.0; color: Qt.rgba(0.20, 0.20, 0.30, 1.0) }
-                        GradientStop { position: 1.0; color: Qt.rgba(0.10, 0.10, 0.18, 1.0) }
-                    }
+                    color: Qt.rgba(0, 0, 0, 0.06)
 
                     Kirigami.Icon {
                         anchors.centerIn: parent
                         source: "media-album-cover"
                         width: 40
                         height: 40
-                        color: Qt.rgba(1, 1, 1, 0.22)
+                        color: "#b0b0b6"
                     }
                 }
 
@@ -100,7 +97,7 @@ Item {
                 Rectangle {
                     anchors.fill: parent
                     radius: 12
-                    color: Qt.rgba(1, 1, 1, cardHover.containsMouse ? 0.06 : 0.0)
+                    color: Qt.rgba(0, 0, 0, cardHover.containsMouse ? 0.05 : 0.0)
                     z: 2
 
                     Behavior on color { ColorAnimation { duration: 150 } }
@@ -121,7 +118,7 @@ Item {
                       : "(untitled)"
                 font.weight: Font.SemiBold
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.90
-                color: Qt.rgba(1, 1, 1, 0.92)
+                color: "#1d1d1f"
             }
 
             Controls.Label {
@@ -130,7 +127,7 @@ Item {
                 text: (root.albumData && root.albumData.artist)
                       ? root.albumData.artist
                       : ""
-                color: Qt.rgba(1, 1, 1, 0.45)
+                color: "#86868b"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
                 visible: text.length > 0
             }
@@ -142,7 +139,7 @@ Item {
                             ? root.albumData.track_count : 0
                     return n + (n === 1 ? " track" : " tracks")
                 }
-                color: Qt.rgba(1, 1, 1, 0.28)
+                color: "#b0b0b6"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.74
             }
         }

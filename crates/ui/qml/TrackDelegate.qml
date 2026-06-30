@@ -37,7 +37,7 @@ Item {
                 return Qt.rgba(hc.r, hc.g, hc.b, 0.14)
             }
             if (delegateHover.containsMouse) {
-                return Qt.rgba(1, 1, 1, 0.05)
+                return Qt.rgba(0, 0, 0, 0.05)
             }
             return "transparent"
         }
@@ -79,7 +79,7 @@ Item {
         anchors.right: parent.right
         anchors.leftMargin: 72
         height: 1
-        color: Qt.rgba(1, 1, 1, 0.07)
+        color: "transparent"
     }
 
     // ── Content ───────────────────────────────────────────────────────────
@@ -102,7 +102,7 @@ Item {
                 anchors.verticalCenterOffset: 5
                 radius: 10
                 color: "#000000"
-                opacity: 0.40
+                opacity: 0.14
             }
             Rectangle {
                 anchors.centerIn: parent
@@ -111,14 +111,14 @@ Item {
                 anchors.verticalCenterOffset: 2
                 radius: 9
                 color: "#000000"
-                opacity: 0.20
+                opacity: 0.10
             }
 
             Rectangle {
                 id: artContainer
                 anchors.fill: parent
                 radius: 8
-                color: Qt.rgba(1, 1, 1, 0.08)
+                color: Qt.rgba(0, 0, 0, 0.06)
                 clip: true
 
                 Image {
@@ -139,7 +139,7 @@ Item {
                     source: "audio-x-generic"
                     width: 22
                     height: 22
-                    color: Qt.rgba(1, 1, 1, 0.30)
+                    color: "#b0b0b6"
                     visible: !thumbImg.visible
                 }
 
@@ -238,7 +238,7 @@ Item {
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.97
                 color: root.isCurrentTrack
                        ? (Kirigami.Theme.highlightColor || "#3daee9")
-                       : Qt.rgba(1, 1, 1, 0.92)
+                       : "#1d1d1f"
 
                 Behavior on color { ColorAnimation { duration: 160 } }
             }
@@ -246,7 +246,7 @@ Item {
                 Layout.fillWidth: true
                 elide: Text.ElideRight
                 text: (root.trackData && root.trackData.artist) ? root.trackData.artist : ""
-                color: Qt.rgba(1, 1, 1, 0.45)
+                color: "#86868b"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
                 visible: text.length > 0
             }
@@ -264,7 +264,7 @@ Item {
                 var seconds = totalSec % 60
                 return minutes + ":" + (seconds < 10 ? "0" : "") + seconds
             }
-            color: Qt.rgba(1, 1, 1, 0.38)
+            color: "#86868b"
             font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
             font.features: { "tnum": 1 }
         }
@@ -433,7 +433,7 @@ Item {
 
             Controls.Label {
                 text: "Title"
-                color: Qt.rgba(1, 1, 1, 0.60)
+                color: "#86868b"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
             }
             Controls.TextField {
@@ -442,18 +442,18 @@ Item {
                 placeholderText: "Title"
                 background: Rectangle {
                     radius: 5
-                    color: Qt.rgba(1, 1, 1, 0.07)
+                    color: Qt.rgba(0, 0, 0, 0.05)
                     border.color: editTitleField.activeFocus
                                   ? (Kirigami.Theme.highlightColor || "#3daee9")
-                                  : Qt.rgba(1, 1, 1, 0.14)
-                    border.width: editTitleField.activeFocus ? 2 : 1
+                                  : "transparent"
+                    border.width:editTitleField.activeFocus ? 2 : 1
                 }
-                color: Qt.rgba(1, 1, 1, 0.92)
+                color: "#1d1d1f"
             }
 
             Controls.Label {
                 text: "Artist"
-                color: Qt.rgba(1, 1, 1, 0.60)
+                color: "#86868b"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
             }
             Controls.TextField {
@@ -462,18 +462,18 @@ Item {
                 placeholderText: "Artist"
                 background: Rectangle {
                     radius: 5
-                    color: Qt.rgba(1, 1, 1, 0.07)
+                    color: Qt.rgba(0, 0, 0, 0.05)
                     border.color: editArtistField.activeFocus
                                   ? (Kirigami.Theme.highlightColor || "#3daee9")
-                                  : Qt.rgba(1, 1, 1, 0.14)
-                    border.width: editArtistField.activeFocus ? 2 : 1
+                                  : "transparent"
+                    border.width:editArtistField.activeFocus ? 2 : 1
                 }
-                color: Qt.rgba(1, 1, 1, 0.92)
+                color: "#1d1d1f"
             }
 
             Controls.Label {
                 text: "Album"
-                color: Qt.rgba(1, 1, 1, 0.60)
+                color: "#86868b"
                 font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.85
             }
             Controls.TextField {
@@ -482,13 +482,13 @@ Item {
                 placeholderText: "Album"
                 background: Rectangle {
                     radius: 5
-                    color: Qt.rgba(1, 1, 1, 0.07)
+                    color: Qt.rgba(0, 0, 0, 0.05)
                     border.color: editAlbumField.activeFocus
                                   ? (Kirigami.Theme.highlightColor || "#3daee9")
-                                  : Qt.rgba(1, 1, 1, 0.14)
-                    border.width: editAlbumField.activeFocus ? 2 : 1
+                                  : "transparent"
+                    border.width:editAlbumField.activeFocus ? 2 : 1
                 }
-                color: Qt.rgba(1, 1, 1, 0.92)
+                color: "#1d1d1f"
             }
         }
 
