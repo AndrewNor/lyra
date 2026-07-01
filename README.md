@@ -97,7 +97,7 @@ Put some music in `~/Music`, click **Scan**, and press play.
 | Shortcut            | Action              |
 | ------------------- | ------------------- |
 | <kbd>Space</kbd>    | Play / Pause        |
-| <kbd>Ctrl</kbd>+<kbd>→</kbd> / <kbd>←</kbd> | Next / Previous track |
+| <kbd>Ctrl</kbd>+<kbd>→</kbd> / <kbd>←</kbd> (or <kbd>N</kbd> / <kbd>P</kbd>) | Next / Previous track |
 | <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> / <kbd>←</kbd> | Seek ±10s |
 | <kbd>Ctrl</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> | Volume up / down |
 | <kbd>Ctrl</kbd>+<kbd>S</kbd> | Toggle shuffle |
@@ -107,7 +107,19 @@ Put some music in `~/Music`, click **Scan**, and press play.
 Shortcuts pause while you're typing in a text field. System media keys
 (Play/Pause, Next, Previous) work too, via MPRIS.
 
-## Install (prebuilt)
+## Install
+
+**One line** (recommended) — downloads the latest AppImage, adds it to your menu,
+no root needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/AndrewNor/lyra/master/install.sh | bash
+```
+
+Then launch **Lyra** from your app menu. To remove it: `rm ~/.local/bin/lyra ~/.local/share/applications/ai.drivee.lyra.desktop`.
+
+<details>
+<summary>Manual install (AppImage / Flatpak / .deb)</summary>
 
 Download from the [latest release](https://github.com/AndrewNor/lyra/releases/latest).
 The **AppImage is the most portable** — it bundles Qt and Kirigami, so it runs on
@@ -135,8 +147,10 @@ flatpak run ai.drivee.lyra
 24.04 LTS (Qt 6.4) the dependencies can't be satisfied — use the AppImage instead.
 
 ```bash
-sudo apt install ./lyra_0.1.0_amd64.deb
+sudo apt install ./lyra_*_amd64.deb
 ```
+
+</details>
 
 ## Architecture
 

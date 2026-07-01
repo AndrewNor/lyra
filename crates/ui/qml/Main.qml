@@ -92,9 +92,9 @@ Kirigami.ApplicationWindow {
         }
     }
 
-    Shortcut { sequences: ["Space"];            enabled: !root.textInputFocused; onActivated: root.togglePlayPause() }
-    Shortcut { sequences: ["Ctrl+Right"];       enabled: !root.textInputFocused; onActivated: player.next() }
-    Shortcut { sequences: ["Ctrl+Left"];        enabled: !root.textInputFocused; onActivated: player.prev() }
+    Shortcut { sequences: ["Space", "MediaPlay", "MediaTogglePlayPause"]; enabled: !root.textInputFocused; onActivated: root.togglePlayPause() }
+    Shortcut { sequences: ["Ctrl+Right", "N", "MediaNext"];     enabled: !root.textInputFocused; onActivated: player.next() }
+    Shortcut { sequences: ["Ctrl+Left", "P", "MediaPrevious"];  enabled: !root.textInputFocused; onActivated: player.prev() }
     Shortcut { sequences: ["Ctrl+Shift+Right"]; enabled: !root.textInputFocused; onActivated: root.nudgeSeek(10) }
     Shortcut { sequences: ["Ctrl+Shift+Left"];  enabled: !root.textInputFocused; onActivated: root.nudgeSeek(-10) }
     Shortcut { sequences: ["Ctrl+Up"];          enabled: !root.textInputFocused; onActivated: root.nudgeVolume(0.05) }
@@ -965,7 +965,7 @@ Kirigami.ApplicationWindow {
                     onClicked: player.prev()
                     enabled: (player.state_text || "Stopped") !== "Stopped"
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: "Previous (Ctrl+←)"
+                    Controls.ToolTip.text: "Previous (Ctrl+← / P)"
                     Controls.ToolTip.delay: 400
                 }
 
@@ -1048,7 +1048,7 @@ Kirigami.ApplicationWindow {
                     onClicked: player.next()
                     enabled: (player.state_text || "Stopped") !== "Stopped"
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: "Next (Ctrl+→)"
+                    Controls.ToolTip.text: "Next (Ctrl+→ / N)"
                     Controls.ToolTip.delay: 400
                 }
 
