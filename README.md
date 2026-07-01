@@ -1,5 +1,10 @@
 # Lyra
 
+[![Latest release](https://img.shields.io/github/v/release/AndrewNor/lyra?sort=semver)](https://github.com/AndrewNor/lyra/releases/latest)
+[![Release build](https://github.com/AndrewNor/lyra/actions/workflows/release.yml/badge.svg)](https://github.com/AndrewNor/lyra/actions/workflows/release.yml)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPLv3-blue.svg)](LICENSE)
+[![Platform: Linux/KDE](https://img.shields.io/badge/platform-Linux%20%2F%20KDE%20Plasma-1d99f3.svg)](#requirements)
+
 A beautiful, native music player for KDE Plasma — a fast Rust core wrapped in a
 QML/Kirigami interface that borrows its palette from the album art you're
 listening to.
@@ -9,6 +14,15 @@ integrates with the desktop (media keys, MPRIS) the way a first-class Plasma app
 should.
 
 > **Status:** actively developed. Linux/Wayland + Plasma is the primary target.
+
+## Screenshots
+
+<!-- Drop PNGs into docs/screenshots/ and uncomment:
+![Lyra — now playing](docs/screenshots/now-playing.png)
+![Lyra — library](docs/screenshots/library.png)
+-->
+
+_Screenshots coming soon._
 
 ---
 
@@ -77,6 +91,21 @@ access once.
 ```
 
 Put some music in `~/Music`, click **Scan**, and press play.
+
+## Keyboard shortcuts
+
+| Shortcut            | Action              |
+| ------------------- | ------------------- |
+| <kbd>Space</kbd>    | Play / Pause        |
+| <kbd>Ctrl</kbd>+<kbd>→</kbd> / <kbd>←</kbd> | Next / Previous track |
+| <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> / <kbd>←</kbd> | Seek ±10s |
+| <kbd>Ctrl</kbd>+<kbd>↑</kbd> / <kbd>↓</kbd> | Volume up / down |
+| <kbd>Ctrl</kbd>+<kbd>S</kbd> | Toggle shuffle |
+| <kbd>Ctrl</kbd>+<kbd>R</kbd> | Cycle repeat        |
+| <kbd>Ctrl</kbd>+<kbd>M</kbd> | Mute / unmute       |
+
+Shortcuts pause while you're typing in a text field. System media keys
+(Play/Pause, Next, Previous) work too, via MPRIS.
 
 ## Install (prebuilt)
 
