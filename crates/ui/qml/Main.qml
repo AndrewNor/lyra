@@ -59,6 +59,50 @@ Kirigami.ApplicationWindow {
         player.restoreSession()
     }
 
+    // ── Keyboard shortcuts ──────────────────────────────────────────────────
+    // Global playback shortcuts. Suppressed while a text field (search, playlist
+    // name, EQ value…) has focus so typing — and Ctrl+Arrow word-jumps — aren't
+    // hijacked. System media keys (Play/Next/Prev) are handled separately via
+    // MPRIS.
+    readonly property bool textInputFocused:
+        root.activeFocusItem instanceof TextInput || root.activeFocusItem instanceof TextEdit
+    property real volumeBeforeMute: 0.5
+
+    function togglePlayPause() {
+        if (player.state_text === "Playing")
+            player.pause()
+        else if (player.state_text === "Paused")
+            player.resume()
+        else
+            player.playCurrent()
+    }
+    function nudgeVolume(delta) {
+        player.changeVolume(Math.max(0.0, Math.min(1.0, player.volume + delta)))
+    }
+    function nudgeSeek(deltaSecs) {
+        if (player.duration_secs > 0)
+            player.seekToSecs(Math.max(0.0, Math.min(player.duration_secs, player.position_secs + deltaSecs)))
+    }
+    function toggleMute() {
+        if (player.volume > 0.0) {
+            root.volumeBeforeMute = player.volume
+            player.changeVolume(0.0)
+        } else {
+            player.changeVolume(root.volumeBeforeMute > 0.0 ? root.volumeBeforeMute : 0.5)
+        }
+    }
+
+    Shortcut { sequences: ["Space"];            enabled: !root.textInputFocused; onActivated: root.togglePlayPause() }
+    Shortcut { sequences: ["Ctrl+Right"];       enabled: !root.textInputFocused; onActivated: player.next() }
+    Shortcut { sequences: ["Ctrl+Left"];        enabled: !root.textInputFocused; onActivated: player.prev() }
+    Shortcut { sequences: ["Ctrl+Shift+Right"]; enabled: !root.textInputFocused; onActivated: root.nudgeSeek(10) }
+    Shortcut { sequences: ["Ctrl+Shift+Left"];  enabled: !root.textInputFocused; onActivated: root.nudgeSeek(-10) }
+    Shortcut { sequences: ["Ctrl+Up"];          enabled: !root.textInputFocused; onActivated: root.nudgeVolume(0.05) }
+    Shortcut { sequences: ["Ctrl+Down"];        enabled: !root.textInputFocused; onActivated: root.nudgeVolume(-0.05) }
+    Shortcut { sequences: ["Ctrl+S"];           enabled: !root.textInputFocused; onActivated: player.toggleShuffle() }
+    Shortcut { sequences: ["Ctrl+R"];           enabled: !root.textInputFocused; onActivated: player.cycleRepeat() }
+    Shortcut { sequences: ["Ctrl+M"];           enabled: !root.textInputFocused; onActivated: root.toggleMute() }
+
     // ── Auto-scroll the song list to the now-playing track ──────────────────
     // On every track change, smoothly scroll so the playing track sits as the
     // 3rd visible row (two tracks of context above it).
@@ -911,7 +955,7 @@ Kirigami.ApplicationWindow {
                     icon.color: player.shuffle ? root.accentColor : "#5e5e66"
                     onClicked: player.toggleShuffle()
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: player.shuffle ? "Shuffle: On" : "Shuffle: Off"
+                    Controls.ToolTip.text: (player.shuffle ? "Shuffle: On" : "Shuffle: Off") + " (Ctrl+S)"
                     Controls.ToolTip.delay: 400
                 }
 
@@ -921,7 +965,7 @@ Kirigami.ApplicationWindow {
                     onClicked: player.prev()
                     enabled: (player.state_text || "Stopped") !== "Stopped"
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: "Previous"
+                    Controls.ToolTip.text: "Previous (Ctrl+←)"
                     Controls.ToolTip.delay: 400
                 }
 
@@ -993,7 +1037,7 @@ Kirigami.ApplicationWindow {
 
                     Controls.ToolTip {
                         visible: playBtnArea.containsMouse
-                        text: (player.state_text === "Playing") ? "Pause" : "Play"
+                        text: ((player.state_text === "Playing") ? "Pause" : "Play") + " (Space)"
                         delay: 400
                     }
                 }
@@ -1004,7 +1048,7 @@ Kirigami.ApplicationWindow {
                     onClicked: player.next()
                     enabled: (player.state_text || "Stopped") !== "Stopped"
                     Controls.ToolTip.visible: hovered
-                    Controls.ToolTip.text: "Next"
+                    Controls.ToolTip.text: "Next (Ctrl+→)"
                     Controls.ToolTip.delay: 400
                 }
 
@@ -1019,9 +1063,9 @@ Kirigami.ApplicationWindow {
                     onClicked: player.cycleRepeat()
                     Controls.ToolTip.visible: hovered
                     Controls.ToolTip.text: {
-                        if (player.repeat_mode === "all") return "Repeat: All"
-                        if (player.repeat_mode === "one") return "Repeat: One"
-                        return "Repeat: Off"
+                        if (player.repeat_mode === "all") return "Repeat: All (Ctrl+R)"
+                        if (player.repeat_mode === "one") return "Repeat: One (Ctrl+R)"
+                        return "Repeat: Off (Ctrl+R)"
                     }
                     Controls.ToolTip.delay: 400
                 }
