@@ -1364,13 +1364,19 @@ Kirigami.ApplicationWindow {
 
                         Controls.ToolButton {
                             text: "+"
-                            font.bold: true
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
                             implicitHeight: 20
                             implicitWidth: 22
                             opacity: 0.60
                             flat: true
                             padding: 0
+                            contentItem: Controls.Label {
+                                text: "+"
+                                color: root.textDim
+                                font.bold: true
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.text: "New playlist"
                             Controls.ToolTip.delay: 400
@@ -1441,13 +1447,19 @@ Kirigami.ApplicationWindow {
 
                         Controls.ToolButton {
                             text: "+"
-                            font.bold: true
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
                             implicitHeight: 20
                             implicitWidth: 22
                             opacity: 0.60
                             flat: true
                             padding: 0
+                            contentItem: Controls.Label {
+                                text: "+"
+                                color: root.textDim
+                                font.bold: true
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.80
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                             Controls.ToolTip.visible: hovered
                             Controls.ToolTip.text: "New smart playlist"
                             Controls.ToolTip.delay: 400
@@ -1593,6 +1605,12 @@ Kirigami.ApplicationWindow {
                                 spacing: 10
 
                                 Controls.ToolButton {
+                                    id: backBtn
+                                    contentItem: Controls.Label {
+                                        text: backBtn.text
+                                        color: root.accentColor
+                                        verticalAlignment: Text.AlignVCenter
+                                    }
                                     text: {
                                         if (root.view === "album_detail") return "‹ Albums"
                                         if (root.view === "genre_detail") return "‹ Genres"
@@ -2774,13 +2792,22 @@ Kirigami.ApplicationWindow {
                         Controls.ToolButton {
                             id: tabQueueBtn
                             text: "Up Next"
-                            font.bold: tabRow.activeTab === "queue"
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
                             flat: true
                             checkable: false
                             Layout.fillWidth: true
                             onClicked: tabRow.activeTab = "queue"
                             opacity: tabRow.activeTab === "queue" ? 1.0 : 0.40
+                            // Explicit contentItem: the org.kde.desktop style paints
+                            // the default label from the system scheme (white), which
+                            // is invisible on our light panel. Colour it ourselves.
+                            contentItem: Controls.Label {
+                                text: "Up Next"
+                                color: tabRow.activeTab === "queue" ? root.accentColor : root.textPrimary
+                                font.bold: tabRow.activeTab === "queue"
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
 
                         Rectangle {
@@ -2792,13 +2819,19 @@ Kirigami.ApplicationWindow {
                         Controls.ToolButton {
                             id: tabLyricsBtn
                             text: "Lyrics"
-                            font.bold: tabRow.activeTab === "lyrics"
-                            font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
                             flat: true
                             checkable: false
                             Layout.fillWidth: true
                             onClicked: tabRow.activeTab = "lyrics"
                             opacity: tabRow.activeTab === "lyrics" ? 1.0 : 0.40
+                            contentItem: Controls.Label {
+                                text: "Lyrics"
+                                color: tabRow.activeTab === "lyrics" ? root.accentColor : root.textPrimary
+                                font.bold: tabRow.activeTab === "lyrics"
+                                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                                horizontalAlignment: Text.AlignHCenter
+                                verticalAlignment: Text.AlignVCenter
+                            }
                         }
                     }
 
