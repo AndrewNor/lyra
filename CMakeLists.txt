@@ -5,6 +5,23 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)   # CXX-Qt emits Q_OBJECT headers; moc is mandatory
 
+# Prefer mold or lld for linking. GNU ld.bfd resolves static archives strictly
+# left-to-right, so it fails on the libasound/libpipewire symbols pulled in
+# transitively by the Rust static library (liblyra_ui.a) regardless of where we
+# list them. mold and lld resolve archives order-independently, so a fresh
+# build "just works" when one of them is present.
+find_program(MOLD_LINKER mold)
+find_program(LLD_LINKER ld.lld)
+if(MOLD_LINKER)
+    add_link_options("-fuse-ld=mold")
+    message(STATUS "lyra: linking with mold")
+elseif(LLD_LINKER)
+    add_link_options("-fuse-ld=lld")
+    message(STATUS "lyra: linking with lld")
+else()
+    message(STATUS "lyra: using default linker (install mold or lld if linking fails)")
+endif()
+
 find_package(Qt6 6.8 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2 QmlImportScanner)
 qt_standard_project_setup(REQUIRES 6.8)
 
