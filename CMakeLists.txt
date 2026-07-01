@@ -120,7 +120,7 @@ install(FILES packaging/ai.drivee.lyra.svg
 
 # ── CPack (.deb) ──────────────────────────────────────────────────────────────
 set(CPACK_PACKAGE_NAME "lyra")
-set(CPACK_PACKAGE_VERSION "0.1.1")
+set(CPACK_PACKAGE_VERSION "0.1.2")
 set(CPACK_PACKAGE_CONTACT "Andrew Nor <Andrew.n@drivee.ai>")
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Native music player for KDE Plasma")
 set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/AndrewNor/lyra")
