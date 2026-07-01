@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b3a6b"/>
+      <stop offset="1" stop-color="#e0705a"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f2e9ee"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square ground -->
+  <rect x="0" y="0" width="512" height="512" rx="116" fill="url(#bg)"/>
+
+  <!-- lyre: two curved arms rising from a base to a crossbar, with strings -->
+  <g fill="none" stroke="url(#glyph)" stroke-width="20" stroke-linecap="round">
+    <!-- left arm -->
+    <path d="M188 372 C 150 300, 150 210, 196 150"/>
+    <!-- right arm -->
+    <path d="M324 372 C 362 300, 362 210, 316 150"/>
+    <!-- crossbar (yoke) -->
+    <path d="M182 150 L 330 150"/>
+    <!-- base -->
+    <path d="M182 372 L 330 372"/>
+  </g>
+
+  <!-- strings -->
+  <g stroke="#ffffff" stroke-width="8" stroke-linecap="round" opacity="0.92">
+    <path d="M226 168 L 226 356"/>
+    <path d="M256 164 L 256 360"/>
+    <path d="M286 168 L 286 356"/>
+  </g>
+</svg>

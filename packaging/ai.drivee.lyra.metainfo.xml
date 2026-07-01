@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>ai.drivee.lyra</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <name>Lyra</name>
+  <summary>Play your local music library</summary>
+
+  <description>
+    <p>
+      Lyra is a native music player for KDE Plasma. It scans your local music
+      library, plays it gaplessly through PipeWire, and borrows its palette from
+      the album art you are listening to.
+    </p>
+    <p>Features:</p>
+    <ul>
+      <li>Local library browsing by song, album, artist and genre</li>
+      <li>Accent color and background sampled from the current cover art</li>
+      <li>Play, seek, shuffle and repeat with a shuffle-aware Up Next queue</li>
+      <li>10-band equalizer, plus bit-perfect and crossfade options</li>
+      <li>MPRIS integration for media keys and the Plasma media applet</li>
+      <li>Session restore — reopens on the track you left off</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">ai.drivee.lyra.desktop</launchable>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Audio</category>
+    <category>Player</category>
+  </categories>
+
+  <url type="homepage">https://github.com/AndrewNor/lyra</url>
+  <url type="bugtracker">https://github.com/AndrewNor/lyra/issues</url>
+
+  <developer id="ai.drivee">
+    <name>Andrew Nor</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-06-30">
+      <description>
+        <p>First public release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

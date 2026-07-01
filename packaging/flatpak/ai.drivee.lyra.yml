@@ -1,0 +1,43 @@
+# Flatpak manifest for Lyra.
+#
+# Built against the KDE runtime (Qt 6 + Kirigami) with the Rust SDK extension.
+#
+# NOTE: this build enables network access during the build step
+# (--share=network) so CMake's FetchContent (Corrosion, cxx-qt-cmake) and
+# cargo can fetch their dependencies. That is fine for a self-distributed
+# .flatpak bundle. A Flathub submission would instead require offline builds
+# with vendored cargo sources (flatpak-cargo-generator) — a follow-up.
+id: ai.drivee.lyra
+runtime: org.kde.Platform
+runtime-version: '6.8'
+sdk: org.kde.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: lyra
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/lyra/cargo
+  build-args:
+    - --share=network
+
+finish-args:
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # Read-only access to the user's music.
+  - --filesystem=xdg-music:ro
+  # MPRIS so media keys / the Plasma media applet can control playback.
+  - --own-name=org.mpris.MediaPlayer2.lyra
+
+modules:
+  - name: lyra
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: dir
+        path: ../..

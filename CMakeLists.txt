@@ -75,3 +75,40 @@ add_dependencies(lyra ranlib_lyra_ui)
 
 # For statically-linked Qt: scan and pull in QML plugin initialisers.
 qt_import_qml_plugins(lyra)
+
+# ── Install rules ─────────────────────────────────────────────────────────────
+# Used by `cmake --install`, and by the packaging targets (.deb via CPack,
+# AppImage, Flatpak) to lay the app out under a standard prefix.
+include(GNUInstallDirs)
+
+# The Rust/cxx-qt link produces a binary without a DT_RUNPATH slot, so CMake's
+# install-time RPATH rewrite fails. We don't need it: for the .deb the app finds
+# Qt/Kirigami on the standard system path, and the AppImage/Flatpak builds manage
+# their own bundling and rpaths.
+set(CMAKE_SKIP_INSTALL_RPATH ON)
+
+install(TARGETS lyra RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(FILES packaging/ai.drivee.lyra.desktop
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+install(FILES packaging/ai.drivee.lyra.metainfo.xml
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+install(FILES packaging/ai.drivee.lyra.svg
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
+
+# ── CPack (.deb) ──────────────────────────────────────────────────────────────
+set(CPACK_PACKAGE_NAME "lyra")
+set(CPACK_PACKAGE_VERSION "0.1.0")
+set(CPACK_PACKAGE_CONTACT "Andrew Nor <Andrew.n@drivee.ai>")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Native music player for KDE Plasma")
+set(CPACK_PACKAGE_HOMEPAGE_URL "https://github.com/AndrewNor/lyra")
+set(CPACK_GENERATOR "DEB")
+set(CPACK_DEBIAN_PACKAGE_SECTION "sound")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Andrew Nor <Andrew.n@drivee.ai>")
+# Let CPack discover the shared-library dependencies from the ELF binary.
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+# Kirigami and the QML runtime are dlopen'd, so shlibdeps can't see them —
+# name them explicitly. (The Qt/PipeWire/ALSA shared libs are found by
+# shlibdeps, including the correct t64 package names, so they're not listed.)
+set(CPACK_DEBIAN_PACKAGE_DEPENDS
+    "qml6-module-org-kde-kirigami, qml6-module-qtquick-controls, qml6-module-qtquick-layouts")
+include(CPack)
