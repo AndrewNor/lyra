@@ -41,10 +41,12 @@ modules:
     buildsystem: cmake-ninja
     config-opts:
       - -DCMAKE_BUILD_TYPE=Release
-      # The KDE Sdk ships no binutils `ld`; link with lld from the llvm18
-      # extension (on PATH via append-path). Forced here because CMake's
-      # auto-detection doesn't always resolve ld.lld inside the sandbox.
-      - -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld
+      # The KDE Sdk ships no binutils `ld`. Disable Lyra's own linker
+      # auto-detection (which would also add -fuse-ld=mold and conflict) and
+      # force lld from the llvm18 extension. -B points gcc's driver at the
+      # directory holding ld.lld so collect2 can find it.
+      - -DLYRA_AUTO_LINKER=OFF
+      - -DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -B/usr/lib/sdk/llvm18/bin
     sources:
       - type: dir
         path: ../..
