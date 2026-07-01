@@ -720,15 +720,34 @@ Kirigami.ApplicationWindow {
             }
 
             Controls.ToolButton {
+                id: scanButton
                 text: (library.scanning || false) ? "Scanning…" : "Scan"
-                icon.name: "view-refresh"
-                icon.color: "#5e5e66"
-                palette.buttonText: "#5e5e66"
                 enabled: !(library.scanning || false)
                 onClicked: library.scan()
                 Controls.ToolTip.visible: hovered
                 Controls.ToolTip.text: "Scan ~/Music for new tracks"
                 Controls.ToolTip.delay: 600
+
+                // Explicit contentItem: the org.kde.desktop style renders the
+                // default label through the system theme (white on dark), which
+                // is invisible on our light header. Colour both icon and text
+                // ourselves so they always read on the light ground.
+                contentItem: RowLayout {
+                    spacing: 5
+                    Kirigami.Icon {
+                        source: "view-refresh"
+                        Layout.preferredWidth: 16
+                        Layout.preferredHeight: 16
+                        color: "#5e5e66"
+                        opacity: scanButton.enabled ? 1.0 : 0.4
+                    }
+                    Controls.Label {
+                        text: scanButton.text
+                        color: "#5e5e66"
+                        opacity: scanButton.enabled ? 1.0 : 0.4
+                        verticalAlignment: Text.AlignVCenter
+                    }
+                }
             }
 
             Controls.ToolButton {
