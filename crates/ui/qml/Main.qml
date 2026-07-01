@@ -241,7 +241,34 @@ Kirigami.ApplicationWindow {
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
         implicitWidth: 340
-        standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+        // Explicit footer: the auto standardButtons render their text from the
+        // system scheme (white), invisible on this white dialog. Colour them.
+        footer: Controls.DialogButtonBox {
+            padding: 14
+            spacing: 8
+            background: Rectangle { color: "transparent" }
+            Controls.Button {
+                flat: true
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.RejectRole
+                contentItem: Controls.Label {
+                    text: "Cancel"
+                    color: root.textDim
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Controls.Button {
+                flat: true
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.AcceptRole
+                contentItem: Controls.Label {
+                    text: "OK"
+                    color: root.accentColor
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
 
         background: Rectangle {
             color: "#ffffff"
@@ -321,7 +348,34 @@ Kirigami.ApplicationWindow {
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
         implicitWidth: 340
-        standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+        // Explicit footer: the auto standardButtons render their text from the
+        // system scheme (white), invisible on this white dialog. Colour them.
+        footer: Controls.DialogButtonBox {
+            padding: 14
+            spacing: 8
+            background: Rectangle { color: "transparent" }
+            Controls.Button {
+                flat: true
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.RejectRole
+                contentItem: Controls.Label {
+                    text: "Cancel"
+                    color: root.textDim
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Controls.Button {
+                flat: true
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.AcceptRole
+                contentItem: Controls.Label {
+                    text: "OK"
+                    color: root.accentColor
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
 
         background: Rectangle {
             color: "#ffffff"
@@ -451,6 +505,12 @@ Kirigami.ApplicationWindow {
                     text: "Cancel"
                     flat: true
                     onClicked: deletePlaylistDialog.close()
+                    contentItem: Controls.Label {
+                        text: "Cancel"
+                        color: root.textDim
+                        horizontalAlignment: Text.AlignHCenter
+                        verticalAlignment: Text.AlignVCenter
+                    }
                 }
 
                 Controls.Button {
@@ -502,7 +562,34 @@ Kirigami.ApplicationWindow {
         x: Math.round((root.width - width) / 2)
         y: Math.round((root.height - height) / 2)
         width: 480
-        standardButtons: Controls.Dialog.Ok | Controls.Dialog.Cancel
+        // Explicit footer: the auto standardButtons render their text from the
+        // system scheme (white), invisible on this white dialog. Colour them.
+        footer: Controls.DialogButtonBox {
+            padding: 14
+            spacing: 8
+            background: Rectangle { color: "transparent" }
+            Controls.Button {
+                flat: true
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.RejectRole
+                contentItem: Controls.Label {
+                    text: "Cancel"
+                    color: root.textDim
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+            Controls.Button {
+                flat: true
+                Controls.DialogButtonBox.buttonRole: Controls.DialogButtonBox.AcceptRole
+                contentItem: Controls.Label {
+                    text: "OK"
+                    color: root.accentColor
+                    font.bold: true
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
+            }
+        }
 
         ColumnLayout {
             width: parent.width
@@ -621,7 +708,13 @@ Kirigami.ApplicationWindow {
                 text: "+ Add Rule"
                 visible: root._spRules.length < 4
                 flat: true
-                font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                contentItem: Controls.Label {
+                    text: "+ Add Rule"
+                    color: root.accentColor
+                    font.pointSize: Kirigami.Theme.defaultFont.pointSize * 0.82
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
+                }
                 onClicked: {
                     var rules = root._spRules.slice()
                     rules.push({"field":"genre","op":"is","value":""})
