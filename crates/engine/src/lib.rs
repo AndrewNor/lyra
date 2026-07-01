@@ -123,6 +123,16 @@ pub struct Engine {
     /// thread once the seek is complete.
     flushing: Arc<AtomicBool>,
 
+    /// Set by the decode thread when it reaches the natural end of the track
+    /// (EOF), not on a user stop. Read by the RT callback to decide when the
+    /// ring buffer has fully drained.
+    decode_done: Arc<AtomicBool>,
+
+    /// Set by the RT callback once `decode_done` is set AND the ring buffer is
+    /// drained — i.e. the track has finished playing. Read by `is_finished()`
+    /// so the UI can auto-advance the queue. Reset on each `play()`.
+    finished: Arc<AtomicBool>,
+
     /// Master volume gain, stored as f32 bits in an AtomicU32.
     /// Range 0.0..=1.0.  Default 1.0 (full volume).
     /// Written by `set_volume()` on the UI thread; read once per RT callback.
@@ -190,6 +200,8 @@ impl Engine {
             seek_ms: Arc::new(AtomicU64::new(SEEK_NONE)),
             seek_generation: Arc::new(AtomicU64::new(0)),
             flushing: Arc::new(AtomicBool::new(false)),
+            decode_done: Arc::new(AtomicBool::new(false)),
+            finished: Arc::new(AtomicBool::new(false)),
             volume: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             eq_config: Arc::new(Mutex::new(EqConfig::default())),
             eq_generation: Arc::new(AtomicU64::new(0)),
@@ -204,6 +216,13 @@ impl Engine {
     /// Return the current playback state.
     pub fn state(&self) -> PlaybackState {
         self.state
+    }
+
+    /// `true` once the current track has finished playing naturally (decoded to
+    /// EOF and the ring buffer drained) — not on pause or user stop. Reset by
+    /// the next `play()`. The UI polls this to auto-advance the queue.
+    pub fn is_finished(&self) -> bool {
+        self.finished.load(Ordering::Relaxed)
     }
 
     /// Start playing the audio file at `path`, replacing any current playback.
@@ -221,6 +240,11 @@ impl Engine {
         // Fresh stop/pause flags.
         let stop_flag = Arc::new(AtomicBool::new(false));
         let paused_flag = Arc::new(AtomicBool::new(false));
+
+        // Fresh end-of-track flags, shared between this track's decode thread
+        // (sets decode_done at EOF) and RT callback (sets finished on drain).
+        let decode_done = Arc::new(AtomicBool::new(false));
+        let finished = Arc::new(AtomicBool::new(false));
 
         // Allocate the ring buffer.
         let (producer, consumer) = RingBuffer::<f32>::new(RING_BUFFER_SAMPLES);
@@ -243,6 +267,8 @@ impl Engine {
             Arc::clone(&paused_flag),
             self.out.channels,
             Arc::clone(&self.volume),
+            Arc::clone(&decode_done),
+            Arc::clone(&finished),
             Some(viz_producer),
         )?;
 
@@ -265,12 +291,15 @@ impl Engine {
             Arc::clone(&self.bit_perfect),
             Arc::clone(&self.crossfade_secs),
             Arc::clone(&self.next_track_path),
+            Arc::clone(&decode_done),
         )?;
 
         self.stream = Some(stream);
         self.decode_thread = Some(decode_thread);
         self.stop_flag = stop_flag;
         self.paused_flag = paused_flag;
+        self.decode_done = decode_done;
+        self.finished = finished;
         self.state = PlaybackState::Playing;
 
         Ok(())

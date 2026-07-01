@@ -856,11 +856,22 @@ impl qobject::Player {
     }
 
     fn refresh_position(mut self: Pin<&mut Self>) {
-        let pos = {
+        let (pos, finished) = {
             let r = unsafe { self.as_mut().rust_mut().get_unchecked_mut() };
-            r.engine.as_ref().map(|e| e.position_secs()).unwrap_or(0.0)
+            match r.engine.as_ref() {
+                Some(e) => (e.position_secs(), e.is_finished()),
+                None => (0.0, false),
+            }
         };
         self.as_mut().set_position_secs(pos);
+
+        // The track played to its natural end — advance the queue. `next()`
+        // respects the repeat mode (One replays, All wraps, Off stops at the
+        // end of the queue) and starts a fresh track, which clears the engine's
+        // finished flag so this fires exactly once per track.
+        if finished {
+            self.as_mut().next();
+        }
     }
 
     fn seek(mut self: Pin<&mut Self>, fraction: f64) {

@@ -84,6 +84,8 @@ pub(crate) fn build_output_stream(
     paused: Arc<AtomicBool>,
     channels: u16,
     volume: Arc<AtomicU32>,
+    decode_done: Arc<AtomicBool>,
+    finished: Arc<AtomicBool>,
     mut viz_producer: Option<Producer<f32>>,
 ) -> crate::Result<Stream> {
     let ch = channels as u64;
@@ -137,6 +139,14 @@ pub(crate) fn build_output_stream(
                 // Accumulate frames (interleaved samples / channel count).
                 if ch > 0 && real_samples > 0 {
                     frames_played.fetch_add(real_samples / ch, Ordering::Relaxed);
+                }
+
+                // End-of-track detection: the decode thread has finished
+                // producing (decode_done) AND the ring buffer is fully drained
+                // (no real samples this callback). Flag it so the UI can
+                // auto-advance the queue. RT-safe: plain atomic load/store.
+                if real_samples == 0 && decode_done.load(Ordering::Relaxed) {
+                    finished.store(true, Ordering::Relaxed);
                 }
 
                 // ── Viz tap (RT-safe: lock-free push, skip-if-full) ───────────

@@ -51,6 +51,7 @@ impl DecodeThread {
         bit_perfect: Arc<AtomicBool>,
         crossfade_secs: Arc<AtomicU32>,
         next_track_path: Arc<Mutex<Option<PathBuf>>>,
+        decode_done: Arc<AtomicBool>,
     ) -> Result<Self, Error> {
         let mut decoder = SymphoniaDecoder::open(path)
             .map_err(|e| Error::Decode(e.to_string()))?;
@@ -83,6 +84,7 @@ impl DecodeThread {
                     &bit_perfect,
                     &crossfade_secs,
                     &next_track_path,
+                    &decode_done,
                 );
             })
             .map_err(|e| Error::Thread(e.to_string()))?;
@@ -240,6 +242,7 @@ fn decode_loop(
     bit_perfect: &AtomicBool,
     crossfade_secs: &AtomicU32,
     next_track_path: &Mutex<Option<PathBuf>>,
+    decode_done: &AtomicBool,
 ) {
     // Resampler for the primary (outgoing) track.
     let mut stream_resampler: Option<StreamResampler> = if file_rate != device_rate {
@@ -570,6 +573,14 @@ fn decode_loop(
         let pushed_len = chunk.len();
         push_all(&mut producer, &chunk, stop, seek_ms);
         frames_pushed += (pushed_len / device_channels.max(1) as usize) as u64;
+    }
+
+    // The loop exited on EOF (or an unrecoverable decode error) rather than a
+    // user stop: mark the track as done decoding. The RT callback flips the
+    // engine's `finished` flag once the ring buffer drains, so the UI can
+    // auto-advance the queue.
+    if !stop.load(Ordering::Relaxed) {
+        decode_done.store(true, Ordering::Relaxed);
     }
 }
 
