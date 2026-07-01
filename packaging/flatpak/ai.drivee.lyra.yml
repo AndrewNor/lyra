@@ -13,12 +13,15 @@ runtime-version: '6.8'
 sdk: org.kde.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
+  # bindgen (via pipewire-sys) needs libclang at build time.
+  - org.freedesktop.Sdk.Extension.llvm18
 command: lyra
 
 build-options:
-  append-path: /usr/lib/sdk/rust-stable/bin
+  append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/llvm18/bin
   env:
     CARGO_HOME: /run/build/lyra/cargo
+    LIBCLANG_PATH: /usr/lib/sdk/llvm18/lib
   build-args:
     - --share=network
 
