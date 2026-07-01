@@ -42,6 +42,11 @@
   <content_rating type="oars-1.1"/>
 
   <releases>
+    <release version="0.1.1" date="2026-07-01">
+      <description>
+        <p>Keyboard shortcuts, automatic advance to the next track when one finishes, and UI fixes.</p>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-06-30">
       <description>
         <p>First public release.</p>
