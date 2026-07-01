@@ -109,11 +109,34 @@ Shortcuts pause while you're typing in a text field. System media keys
 
 ## Install (prebuilt)
 
-Prebuilt packages are attached to each [release](https://github.com/AndrewNor/lyra/releases):
+Download from the [latest release](https://github.com/AndrewNor/lyra/releases/latest).
+The **AppImage is the most portable** — it bundles Qt and Kirigami, so it runs on
+any modern distro regardless of the system Qt version.
 
-- **Flatpak** — `flatpak install lyra.flatpak`
-- **AppImage** — `chmod +x Lyra-*.AppImage && ./Lyra-*.AppImage`
-- **Debian/Ubuntu** — `sudo apt install ./lyra_*.deb`
+**AppImage** (recommended — works everywhere):
+
+```bash
+chmod +x Lyra-x86_64.AppImage
+./Lyra-x86_64.AppImage
+# If it complains about FUSE:
+./Lyra-x86_64.AppImage --appimage-extract-and-run   # or: sudo apt install libfuse2t64
+```
+
+**Flatpak** (bundles the KDE runtime):
+
+```bash
+flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+flatpak install lyra.flatpak
+flatpak run ai.drivee.lyra
+```
+
+**Debian `.deb`** — only for distros that already ship **Qt 6.8 + KF6 Kirigami**
+(Debian 13 "trixie", KDE Neon, Ubuntu 24.10+). On older systems such as Ubuntu
+24.04 LTS (Qt 6.4) the dependencies can't be satisfied — use the AppImage instead.
+
+```bash
+sudo apt install ./lyra_0.1.0_amd64.deb
+```
 
 ## Architecture
 
