@@ -43,11 +43,11 @@ Lyra is built with Qt 6, KDE Kirigami and a Rust workspace driven by CMake.
 
 ```bash
 sudo apt install \
-    build-essential cmake ninja-build ranlib \
-    qt6-base-dev qt6-declarative-dev qt6-declarative-private-dev \
-    qml6-module-qtquick-controls qml6-module-qtquick-layouts \
-    qml6-module-qtquick-window qml6-module-qtqml-workerscript \
-    libkf6kirigami-dev kirigami2 \
+    build-essential cmake ninja-build git pkg-config \
+    qt6-base-dev qt6-declarative-dev \
+    qml6-module-org-kde-kirigami qml6-module-qtquick-controls \
+    qml6-module-qtquick-layouts qml6-module-qtquick-window \
+    qml6-module-qtqml-workerscript \
     libpipewire-0.3-dev libasound2-dev
 # plus Rust: https://rustup.rs
 ```

@@ -14,13 +14,13 @@ permissions:
 
 jobs:
   # ── .deb + AppImage ─────────────────────────────────────────────────────────
-  # Built in a KDE Neon container because the project needs Qt 6.8 + Kirigami,
-  # which stock Ubuntu runners don't ship.
+  # Built in a Debian trixie container because the project needs Qt 6.8, which
+  # stock Ubuntu runners don't ship. trixie provides Qt 6.8 + the Kirigami QML
+  # runtime, so the resulting .deb targets Debian/Ubuntu systems with KF6.
   linux-packages:
     runs-on: ubuntu-latest
     container:
-      image: invent-registry.kde.org/neon/docker-images/plasma:latest
-      options: --user root
+      image: debian:trixie
     steps:
       - uses: actions/checkout@v4
 
@@ -28,10 +28,12 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build curl wget file \
-            libpipewire-0.3-dev libasound2-dev \
-            qml6-module-org-kde-kirigami \
-            qml6-module-qtquick-controls qml6-module-qtquick-layouts
+            build-essential cmake ninja-build git curl wget file ca-certificates pkg-config \
+            qt6-base-dev qt6-declarative-dev \
+            qml6-module-org-kde-kirigami qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-window \
+            qml6-module-qtqml-workerscript \
+            libpipewire-0.3-dev libasound2-dev
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
@@ -67,7 +69,7 @@ jobs:
   flatpak:
     runs-on: ubuntu-latest
     container:
-      image: bilelmoussaoui/flatpak-github-actions:kde-6.8
+      image: bilelmoussaoui/flatpak-github-actions:kde-6.7
       options: --privileged
     steps:
       - uses: actions/checkout@v4
