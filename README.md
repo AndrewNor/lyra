@@ -1,0 +1,110 @@
+# Lyra
+
+A beautiful, native music player for KDE Plasma — a fast Rust core wrapped in a
+QML/Kirigami interface that borrows its palette from the album art you're
+listening to.
+
+Lyra scans your local music library, plays it gaplessly through PipeWire, and
+integrates with the desktop (media keys, MPRIS) the way a first-class Plasma app
+should.
+
+> **Status:** actively developed. Linux/Wayland + Plasma is the primary target.
+
+---
+
+## Features
+
+- **Local library** — scans `~/Music`, organised by Songs, Albums, Artists,
+  Genres and Recently Added.
+- **Adaptive color** — the accent and background gradient are sampled from the
+  current track's cover art (colorless tracks fall back to a calm slate).
+- **Full transport** — play/pause, seek, next/previous, shuffle and repeat, with
+  a shuffle-aware Up Next queue.
+- **10-band equalizer** — biquad EQ that rebuilds on the decode thread, plus
+  bit-perfect and crossfade options.
+- **Desktop integration** — MPRIS so media keys and the Plasma media applet work.
+- **Session restore** — reopens on the track you left off, paused where you were.
+- **Lyrics** — shows synced/plain lyrics when available.
+
+## Requirements
+
+Lyra is built with Qt 6, KDE Kirigami and a Rust workspace driven by CMake.
+
+| Dependency        | Minimum         |
+| ----------------- | --------------- |
+| CMake             | 3.28            |
+| Qt                | 6.8             |
+| KDE Kirigami      | (Qt 6 build)    |
+| Rust (with cargo) | stable          |
+| C++ compiler      | C++17           |
+| PipeWire + ALSA   | dev headers     |
+
+### Debian / Ubuntu
+
+```bash
+sudo apt install \
+    build-essential cmake ninja-build ranlib \
+    qt6-base-dev qt6-declarative-dev qt6-declarative-private-dev \
+    qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+    qml6-module-qtquick-window qml6-module-qtqml-workerscript \
+    libkf6kirigami-dev kirigami2 \
+    libpipewire-0.3-dev libasound2-dev
+# plus Rust: https://rustup.rs
+```
+
+### Arch / Fedora
+
+- **Arch:** `cmake ninja qt6-base qt6-declarative kirigami rust pipewire alsa-lib`
+- **Fedora:** `cmake ninja-build qt6-qtbase-devel qt6-qtdeclarative-devel kf6-kirigami2-devel pipewire-devel alsa-lib-devel rust cargo`
+
+## Build from source
+
+```bash
+git clone https://github.com/AndrewNor/lyra.git
+cd lyra
+cmake -B build -G Ninja
+cmake --build build
+```
+
+The first configure fetches [Corrosion](https://github.com/corrosion-rs/corrosion)
+and [cxx-qt-cmake](https://github.com/KDAB/cxx-qt-cmake), so it needs network
+access once.
+
+### Run
+
+```bash
+./build/lyra
+```
+
+Put some music in `~/Music`, click **Scan**, and press play.
+
+## Install (prebuilt)
+
+Prebuilt packages are attached to each [release](https://github.com/AndrewNor/lyra/releases):
+
+- **Flatpak** — `flatpak install lyra.flatpak`
+- **AppImage** — `chmod +x Lyra-*.AppImage && ./Lyra-*.AppImage`
+- **Debian/Ubuntu** — `sudo apt install ./lyra_*.deb`
+
+## Architecture
+
+Lyra is a Cargo workspace bridged to Qt via [CXX-Qt](https://github.com/KDAB/cxx-qt):
+
+| Crate              | Responsibility                                        |
+| ------------------ | ----------------------------------------------------- |
+| `crates/core`      | Play queue, shuffle/repeat logic (pure Rust)          |
+| `crates/engine`    | Audio output (cpal → PipeWire), ring buffer, position |
+| `crates/decoder`   | Symphonia-backed decoding                             |
+| `crates/dsp`       | Equalizer / biquad filters, ReplayGain (EBU R128)     |
+| `crates/db`        | SQLite library storage                                |
+| `crates/metadata`  | Tag reading (lofty)                                   |
+| `crates/library`   | Filesystem scan + indexing                            |
+| `crates/ui`        | CXX-Qt `QObject`s + QML/Kirigami frontend             |
+| `crates/cli`       | Headless CLI                                          |
+
+The C++ side is a thin shim (`crates/ui/cpp/main.cpp`) that starts the Qt event
+loop and loads the Rust-registered QML module.
+
+## License
+
+[GPL-3.0](LICENSE) © Andrew Nor
